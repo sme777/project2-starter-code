@@ -78,8 +78,13 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 
 // User is the structure definition for a user record.
 type User struct {
-	Username string
-
+	Username             string
+	DataStoreLocationKey []byte
+	DataStoreUUID        userlib.UUID
+	PublicRSAKey         userlib.PKEEncKey
+	PrivateRSAKey        userlib.PKEDecKey
+	FileEncKey           []byte
+	HMACKey              []byte
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
@@ -89,11 +94,46 @@ type User struct {
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
+	//var UUIDerr error
+	//var RSAErr error
+
+	_, exists := userlib.KeystoreGet(username)
+
+	if !exists {
+		return nil, errors.New("username already taken")
+	}
 
 	//TODO: This is a toy implementation.
 	userdata.Username = username
 	//End of toy implementation
 
+	//This will be where we store the encrypted user struct in Datastore
+	userdata.DataStoreLocationKey = userlib.Argon2Key([]byte(password), []byte(username), 128)
+	userdata.DataStoreUUID, _ = uuid.FromBytes(userdata.DataStoreLocationKey)
+
+	//Generating RSA keys for user
+	userdata.PublicRSAKey, userdata.PrivateRSAKey, _ = userlib.PKEKeyGen()
+
+	//Generating symmetric encryption keys
+	userdata.FileEncKey = userlib.Argon2Key([]byte(password), []byte(username+password), 128)
+	userdata.HMACKey = userlib.Argon2Key([]byte(password), []byte(username+password+username), 128)
+
+	//Serializing our user struct
+	serial, _ := json.Marshal(userdata)
+
+	//Encrypting userdata
+	encryptedUserData := userlib.SymEnc(userdata.FileEncKey, userlib.RandomBytes(16), serial)
+
+	//HMAC-ing encrypted userdata
+	HMACofEncryptedUserData, _ := userlib.HMACEval(userdata.HMACKey, encryptedUserData)
+
+	//Storing in DataStore
+	userlib.DatastoreSet(userdata.DataStoreUUID, append(encryptedUserData, HMACofEncryptedUserData...))
+
+	//Storing public RSA key in Keystore
+	userlib.KeystoreSet(username, userdata.PublicRSAKey)
+
+	//Return error for non-unique username
 	return &userdata, nil
 }
 
