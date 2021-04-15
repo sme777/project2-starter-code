@@ -6,6 +6,8 @@ package proj2
 // break the autograder and everyone will be sad.
 
 import (
+	"bytes"
+
 	"github.com/cs161-staff/userlib"
 
 	// The JSON library will be useful for serializing go structs.
@@ -140,8 +142,53 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // GetUser is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/getuser.html
 func GetUser(username string, password string) (userdataptr *User, err error) {
+	//TODO: CHECK USERNAME AND PASSWORD		
 	var userdata User
 	userdataptr = &userdata
+
+	//Retrieving the UUID of where the struct is in the Datastore
+	DataStoreLocationKey := userlib.Argon2Key([]byte(password), []byte(username), 128)
+	DataStoreUUID, _ := uuid.FromBytes(DataStoreLocationKey)
+
+	//Getting the encrypted data from DataStore
+	encryptedRetrievedData, _ := userlib.DatastoreGet(DataStoreUUID)
+
+	//Verifying authenticity/integrity 
+		
+		//Generating HMAC key
+	actualHMACKey := userlib.Argon2Key([]byte(password), []byte(username+password+username), 128)
+		
+		//Retrieving HMAC from data pulled from DataStore
+	lengthEncData := len(encryptedRetrievedData)
+	retrievedHMAC := encryptedRetrievedData[lengthEncData - 64:]
+		
+		//Retrieving and decrypting user struct data from DataStore
+	encryptedDataSection := encryptedRetrievedData[:lengthEncData - 64]
+	userFileEncKey := userlib.Argon2Key([]byte(password), []byte(username+password), 128)
+	serializedDecryptedUserData := userlib.SymDec(userFileEncKey, encryptedDataSection)
+
+	var userdataTest User
+	userdataptrTest := &userdataTest
+
+	json.Unmarshal(serializedDecryptedUserData, userdataptrTest)
+
+		//getting HMAC key from decrypted data
+	retrievedHMACKey := userdataTest.HMACKey
+
+	if !bytes.Equal(retrievedHMACKey, actualHMACKey) {
+		return nil, errors.New("integrity could not be verified")
+	}
+
+		//Comparing generated HMACs
+	
+	generatedHMACFromRetrieved, _ := userlib.HMACEval(retrievedHMACKey, encryptedDataSection)
+
+	if !bytes.Equal(retrievedHMAC, generatedHMACFromRetrieved) {
+		return nil, errors.New("integrity could not be verified")
+	}
+
+
+	userdata = userdataTest
 
 	return userdataptr, nil
 }
@@ -155,6 +202,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	jsonData, _ := json.Marshal(data)
 	userlib.DatastoreSet(storageKey, jsonData)
 	//End of toy implementation
+	
 
 	return
 }
