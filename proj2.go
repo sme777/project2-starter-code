@@ -142,7 +142,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // GetUser is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/getuser.html
 func GetUser(username string, password string) (userdataptr *User, err error) {
-	//TODO: CHECK USERNAME AND PASSWORD		
+	//TODO: CHECK USERNAME AND PASSWORD
 	var userdata User
 	userdataptr = &userdata
 
@@ -153,17 +153,17 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	//Getting the encrypted data from DataStore
 	encryptedRetrievedData, _ := userlib.DatastoreGet(DataStoreUUID)
 
-	//Verifying authenticity/integrity 
-		
-		//Generating HMAC key
+	//Verifying authenticity/integrity
+
+	//Generating HMAC key
 	actualHMACKey := userlib.Argon2Key([]byte(password), []byte(username+password+username), 128)
-		
-		//Retrieving HMAC from data pulled from DataStore
+
+	//Retrieving HMAC from data pulled from DataStore
 	lengthEncData := len(encryptedRetrievedData)
-	retrievedHMAC := encryptedRetrievedData[lengthEncData - 64:]
-		
-		//Retrieving and decrypting user struct data from DataStore
-	encryptedDataSection := encryptedRetrievedData[:lengthEncData - 64]
+	retrievedHMAC := encryptedRetrievedData[lengthEncData-64:]
+
+	//Retrieving and decrypting user struct data from DataStore
+	encryptedDataSection := encryptedRetrievedData[:lengthEncData-64]
 	userFileEncKey := userlib.Argon2Key([]byte(password), []byte(username+password), 128)
 	serializedDecryptedUserData := userlib.SymDec(userFileEncKey, encryptedDataSection)
 
@@ -172,21 +172,20 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 	json.Unmarshal(serializedDecryptedUserData, userdataptrTest)
 
-		//getting HMAC key from decrypted data
+	//getting HMAC key from decrypted data
 	retrievedHMACKey := userdataTest.HMACKey
 
 	if !bytes.Equal(retrievedHMACKey, actualHMACKey) {
 		return nil, errors.New("integrity could not be verified")
 	}
 
-		//Comparing generated HMACs
-	
+	//Comparing generated HMACs
+
 	generatedHMACFromRetrieved, _ := userlib.HMACEval(retrievedHMACKey, encryptedDataSection)
 
 	if !bytes.Equal(retrievedHMAC, generatedHMACFromRetrieved) {
 		return nil, errors.New("integrity could not be verified")
 	}
-
 
 	userdata = userdataTest
 
@@ -197,12 +196,24 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // https://cs161.org/assets/projects/2/docs/client_api/storefile.html
 func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 
+	//NEED to generate hmac and encryption keys
+	//NEED to store owner of file
+	//NEED to store # of append files (links)
+	//NEED to overwrite the file
+
+	var hmac_key = userlib.Argon2Key([]byte(filename), userlib.RandomBytes(16), 128)
+	var encryption_key = userlib.Argon2Key(userlib.RandomBytes(16), []byte(filename), 128)
+
+	var encrypted_data = userlib.SymEnc(encryption_key, userlib.RandomBytes(16), data)
+	var hmac_data, _ = userlib.HMACEval(hmac_key, encrypted_data)
+
 	//TODO: This is a toy implementation.
 	storageKey, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
-	jsonData, _ := json.Marshal(data)
-	userlib.DatastoreSet(storageKey, jsonData)
+	//jsonData, _ := json.Marshal(data)
+	//userlib.DatastoreSet(storageKey, jsonData)
 	//End of toy implementation
-	
+
+	userlib.DatastoreSet(storageKey, append(encrypted_data, hmac_data...))
 
 	return
 }
