@@ -87,9 +87,21 @@ type User struct {
 	PrivateRSAKey        userlib.PKEDecKey
 	FileEncKey           []byte
 	HMACKey              []byte
+	findKeys             map[userlib.UUID]map[string][]byte				
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
+}
+
+// Defining a useful struct
+type File struct {
+	NumAppends int
+	//maps integer to UUID of append...1: UUID of first appendage, 2: UUID of second appendage
+	AppendMap map[int]userlib.UUID
+	Owner string
+	Contents []byte
+	//File X, use append map to find UUIDs of file struct of File Y and Z, from those structs, pull
+	//contents 
 }
 
 // InitUser will be called a single time to initialize a new user.
@@ -200,20 +212,32 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	//NEED to store owner of file
 	//NEED to store # of append files (links)
 	//NEED to overwrite the file
+	var FileData File
+	FileData.NumAppends = 0
+	FileData.Owner = userdata.Username
+	FileData.Contents = data
+	jsonData, _ := json.Marshal(FileData)
+
 
 	var hmac_key = userlib.Argon2Key([]byte(filename), userlib.RandomBytes(16), 128)
 	var encryption_key = userlib.Argon2Key(userlib.RandomBytes(16), []byte(filename), 128)
 
-	var encrypted_data = userlib.SymEnc(encryption_key, userlib.RandomBytes(16), data)
+	var encrypted_data = userlib.SymEnc(encryption_key, userlib.RandomBytes(16), jsonData)
 	var hmac_data, _ = userlib.HMACEval(hmac_key, encrypted_data)
 
 	//TODO: This is a toy implementation.
-	storageKey, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
-	//jsonData, _ := json.Marshal(data)
+	storageKey, _ := uuid.FromBytes([]byte(filename + userdata.Username + string(FileData.NumAppends))[:16])
+	
 	//userlib.DatastoreSet(storageKey, jsonData)
 	//End of toy implementation
+	
 
 	userlib.DatastoreSet(storageKey, append(encrypted_data, hmac_data...))
+	var keysToAdd map[string][]byte
+	keysToAdd["HMAC"] = hmac_key
+	keysToAdd["AES-CFB"] = encryption_key
+
+	userdata.findKeys[storageKey] = keysToAdd
 
 	return
 }
@@ -221,6 +245,39 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 // AppendFile is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/appendfile.html
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	//TODO: Write file verify helper function
+	var AppendData File
+	AppendData.NumAppends = 0
+	AppendData.Owner = userdata.Username
+	AppendData.Contents = data
+	jsonData, _ := json.Marshal(AppendData)
+
+	storageKey, _ := uuid.FromBytes([]byte(filename + userdata.Username + string(0))[:64])
+	encryptedData, _ := userlib.DatastoreGet(storageKey)
+	keysToDecrypt := userdata.findKeys[storageKey]
+
+	var filedataTest File
+	filedataptrTest := &filedataTest
+
+	lengthEncData := len(encryptedData)
+	hmacOfPulledFile := encryptedData[lengthEncData-64:]
+	encryptedPulledFileData := encryptedData[:lengthEncData-64]
+
+	verificationHMAC, _ := userlib.HMACEval(keysToDecrypt["HMAC"], encryptedPulledFileData)
+
+	if (!userlib.HMACEqual(hmacOfPulledFile, verificationHMAC)) {
+		return errors.New("integrity could not be verified") 
+	}
+
+	decryptedSerializedData := userlib.SymDec(keysToDecrypt["AES-CFB"], encryptedPulledFileData)
+	json.Unmarshal(decryptedSerializedData, filedataptrTest)
+	filedataTest.NumAppends += 1
+
+	UUIDToStoreAppend, _ := uuid.FromBytes([]byte(filename + userdata.Username + string(filedataTest.NumAppends))[:16])
+	filedataTest.AppendMap[filedataTest.NumAppends] = UUIDToStoreAppend
+
+	userdata.StoreFile(filename, data)
+	
 	return
 }
 
