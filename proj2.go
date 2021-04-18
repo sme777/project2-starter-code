@@ -87,22 +87,39 @@ type User struct {
 	PrivateRSAKey        userlib.PKEDecKey
 	FileEncKey           []byte
 	HMACKey              []byte
-	findKeys             map[userlib.UUID]map[string][]byte				
+	findKeys             map[userlib.UUID]map[string][]byte
+	hashword             []byte
+
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
 }
 
+
+type FileAccess struct {
+	//This maps users and where the keys for the files are stored for the users
+	userKeyLocations map[string]userlib.UUID
+}
+
+type FileShareMeta struct {
+	NumAppends int
+	Keys map[string][]byte
+}
+
+
 // Defining a useful struct
 type File struct {
-	NumAppends int
+	//LOTS OF PEOPLE DO SHARES, BUT ONLY ONE PERSON NEEDS TO KNOW ABOUT IT
 	//maps integer to UUID of append...1: UUID of first appendage, 2: UUID of second appendage
-	AppendMap map[int]userlib.UUID
-	Owner string
+	NumAppends int
 	Contents []byte
 	//File X, use append map to find UUIDs of file struct of File Y and Z, from those structs, pull
-	//contents 
+	//contents
+	//TODO: keep track of users with access 
 }
+
+/*** USEFUL HELPER FUNCTIONS ***/
+/*** USEFUL HELPER FUNCTIONS END ***/
 
 // InitUser will be called a single time to initialize a new user.
 func InitUser(username string, password string) (userdataptr *User, err error) {
@@ -131,6 +148,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	//Generating symmetric encryption keys
 	userdata.FileEncKey = userlib.Argon2Key([]byte(password), []byte(username+password), 128)
 	userdata.HMACKey = userlib.Argon2Key([]byte(password), []byte(username+password+username), 128)
+
+	//Storing user's password
+	userdata.hashword = userlib.Hash(append([]byte(password), userlib.RandomBytes(16)...))
 
 	//Serializing our user struct
 	serial, _ := json.Marshal(userdata)
@@ -212,31 +232,32 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	//NEED to store owner of file
 	//NEED to store # of append files (links)
 	//NEED to overwrite the file
+
+	//Generating File struct to store the contents of the file
 	var FileData File
 	FileData.NumAppends = 0
-	FileData.Owner = userdata.Username
 	FileData.Contents = data
 	jsonData, _ := json.Marshal(FileData)
 
+	//generating UUID to store file in Datastore
+	UUIDSeed := userlib.Hash([]byte(filename + userdata.Username + string(FileData.NumAppends)))
+	storageKey, _ := uuid.FromBytes(UUIDSeed[:16])
 
-	var hmac_key = userlib.Argon2Key([]byte(filename), userlib.RandomBytes(16), 128)
-	var encryption_key = userlib.Argon2Key(userlib.RandomBytes(16), []byte(filename), 128)
+	//Generating encryption keys for the file
+	var hmac_key = userlib.Argon2Key(append(UUIDSeed, userdata.hashword...), userlib.RandomBytes(16), 128)
+	var encryption_key = userlib.Argon2Key(append(UUIDSeed, userdata.hashword...), userlib.RandomBytes(16), 128)
 
+	//Encrypting the file struct
 	var encrypted_data = userlib.SymEnc(encryption_key, userlib.RandomBytes(16), jsonData)
 	var hmac_data, _ = userlib.HMACEval(hmac_key, encrypted_data)
 
-	//TODO: This is a toy implementation.
-	storageKey, _ := uuid.FromBytes([]byte(filename + userdata.Username + string(FileData.NumAppends))[:16])
-	
-	//userlib.DatastoreSet(storageKey, jsonData)
-	//End of toy implementation
-	
-
+	//Storing file in Datastore
 	userlib.DatastoreSet(storageKey, append(encrypted_data, hmac_data...))
-	var keysToAdd map[string][]byte
+
+	//Storing file's encryption keys for the user
+	keysToAdd := make(map[string][]byte)
 	keysToAdd["HMAC"] = hmac_key
 	keysToAdd["AES-CFB"] = encryption_key
-
 	userdata.findKeys[storageKey] = keysToAdd
 
 	return
@@ -246,19 +267,24 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 // https://cs161.org/assets/projects/2/docs/client_api/appendfile.html
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//TODO: Write file verify helper function
+
+	//Initializing a File struct for storing the appendage
 	var AppendData File
 	AppendData.NumAppends = 0
-	AppendData.Owner = userdata.Username
 	AppendData.Contents = data
 	jsonData, _ := json.Marshal(AppendData)
 
-	storageKey, _ := uuid.FromBytes([]byte(filename + userdata.Username + string(0))[:64])
+	//Finding UUID and encryption keys of the original file to append to
+	originalUUIDSeed := userlib.Hash([]byte(filename + userdata.Username + string(0)))
+	storageKey, _ := uuid.FromBytes(originalUUIDSeed[:16])
 	encryptedData, _ := userlib.DatastoreGet(storageKey)
 	keysToDecrypt := userdata.findKeys[storageKey]
 
+	//Initializing File struct to put original file inside
 	var filedataTest File
 	filedataptrTest := &filedataTest
 
+	//Verifying integrity/authenticity of the original file retrieved from Datastore
 	lengthEncData := len(encryptedData)
 	hmacOfPulledFile := encryptedData[lengthEncData-64:]
 	encryptedPulledFileData := encryptedData[:lengthEncData-64]
@@ -269,21 +295,44 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		return errors.New("integrity could not be verified") 
 	}
 
+	//Decrypting the original File struct to change number of appendages
 	decryptedSerializedData := userlib.SymDec(keysToDecrypt["AES-CFB"], encryptedPulledFileData)
 	json.Unmarshal(decryptedSerializedData, filedataptrTest)
 	filedataTest.NumAppends += 1
 
-	UUIDToStoreAppend, _ := uuid.FromBytes([]byte(filename + userdata.Username + string(filedataTest.NumAppends))[:16])
-	filedataTest.AppendMap[filedataTest.NumAppends] = UUIDToStoreAppend
+	//Re-encrypting and uploading the original file struct
+	jsonDataOriginalAppendUpdate, _ := json.Marshal(filedataTest)
+	var encrypted_original_updated_data = userlib.SymEnc(keysToDecrypt["AES-CFB"], userlib.RandomBytes(16), jsonDataOriginalAppendUpdate)
+	var hmac_original_updated_data, _ = userlib.HMACEval(keysToDecrypt["HMAC"], encrypted_original_updated_data)
+	userlib.DatastoreSet(storageKey, append(encrypted_original_updated_data, hmac_original_updated_data...))
 
-	userdata.StoreFile(filename, data)
-	
+	//Generating UUID to store appendage inside
+	UUIDSeed := userlib.Hash([]byte(filename + userdata.Username + string(filedataTest.NumAppends)))
+	UUIDToStoreAppend, _ := uuid.FromBytes(UUIDSeed[:16])
+
+	//Generating keys to use for appendage
+	var hmac_key_appendage = userlib.Argon2Key(append(UUIDSeed, userdata.hashword...), userlib.RandomBytes(16), 128)
+	var encryption_key_appendage = userlib.Argon2Key(append(UUIDSeed, userdata.hashword...), userlib.RandomBytes(16), 128)
+
+	//Encrypting and HMACing appendage
+	var encrypted_appendage = userlib.SymEnc(encryption_key_appendage, userlib.RandomBytes(16), jsonData)
+	var hmac_appendage, _ = userlib.HMACEval(hmac_key_appendage, encrypted_appendage)
+
+	//uploading appendage to datastore
+	userlib.DatastoreSet(UUIDToStoreAppend, append(encrypted_appendage, hmac_appendage...))
+
+	//storing keys for appendage
+	appendageKeys := make(map[string][]byte)
+	appendageKeys["AES-CFB"] = encryption_key_appendage
+	appendageKeys["HMAc"] = hmac_key_appendage
+
 	return
 }
 
 // LoadFile is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/loadfile.html
 func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
+	//DONT store UUIDs, derive deterministically
 
 	//TODO: This is a toy implementation.
 	storageKey, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
