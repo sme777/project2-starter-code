@@ -107,6 +107,8 @@ type FileAccess struct {
 }
 
 type FileShareMeta struct {
+	FileUUID   userlib.UUID
+	Owner      string
 	NumAppends int
 	Keys       map[string][]byte
 }
@@ -464,7 +466,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	newFileShareMeta.NumAppends = filedataTest.NumAppends
 	newFileShareMeta.Keys["HMAC"] = userdata.FindKeys[originalUUID]["HMAC"]
 	newFileShareMeta.Keys["AES-CFB"] = userdata.FindKeys[originalUUID]["AES-CFB"]
-
+	newFileShareMeta.Owner = filedataTest.Owner
+	newFileShareMeta.FileUUID = originalUUID
 	// serializing share file meta struct
 	jsonData, _ := json.Marshal(newFileShareMeta)
 
@@ -480,6 +483,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	HMACencryptedData, _ := userlib.HMACEval(userdata.FindKeys[originalUUID]["HMAC"], encryptedData)
 	//appending HMAC to encryption
 	encryptHMACData := append(encryptedData, HMACencryptedData...)
+	//hashing encrypted + hmac
+	//hashedEncryptedHMACData := userlib.Hash(encryptHMACData)
 	//signing
 	signature, _ := userlib.DSSign(userdata.PrivateRSAKey, encryptHMACData)
 	//appending signature to HMACed encryption
@@ -496,6 +501,51 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 // https://cs161.org/assets/projects/2/docs/client_api/receivefile.html
 func (userdata *User) ReceiveFile(filename string, sender string,
 	accessToken uuid.UUID) error {
+
+	//pulling the file
+	recievedFileData, ok := userlib.DatastoreGet(accessToken)
+	if !ok {
+		return errors.New("Share does not exist or has been revoked.")
+	}
+	//seperating Data, HMAC, Signiture
+	verifySignature := recievedFileData[len(recievedFileData)-256:]
+	verifyHMAC := recievedFileData[len(recievedFileData)-320 : len(recievedFileData)-256]
+	verifyData := recievedFileData[:len(recievedFileData)-320]
+
+	//getting sender's public rsa key
+	senderRSAKey, _ := userlib.KeystoreGet(sender)
+	//verifying sender
+	sigError := userlib.DSVerify(senderRSAKey, recievedFileData[:len(recievedFileData)-256], verifySignature)
+	if sigError != nil {
+		return errors.New("Sender could not be verified.")
+	}
+	//getting sent HMAC ket and Verifying HMAC
+	decryptedData, _ := userlib.PKEDec(userdata.PrivateRSAKey, verifyData)
+	var recieveFileShareMeta FileShareMeta
+	recieveFileShareMetaPtr := &recieveFileShareMeta
+	json.Unmarshal(decryptedData, recieveFileShareMetaPtr)
+	newHMAC, _ := userlib.HMACEval(verifyHMAC, verifyData)
+	ok2 := userlib.HMACEqual(newHMAC, verifyHMAC)
+	if !ok2 {
+		return errors.New("Integirty/authencity issue.")
+	}
+	//verifying that the file does not exist
+	sentFileName := string(userlib.Hash([]byte(filename + recieveFileShareMeta.Owner + string(0))))
+
+	_, ok3 := userdata.MyFilesToUUID[sentFileName]
+	if ok3 {
+		_, ok4 := userdata.SharedFilesToUUID[sentFileName]
+		if ok4 {
+			return errors.New("File already exists.")
+		}
+	}
+	//updating key-maps for recieving user
+	userdata.FindKeys[recieveFileShareMeta.FileUUID]["HMAC"] = recieveFileShareMeta.Keys["HMAC"]
+	userdata.FindKeys[recieveFileShareMeta.FileUUID]["AES-CFB"] = recieveFileShareMeta.Keys["AES-CFB"]
+	userdata.SharedFilesToUUID[sentFileName] = recieveFileShareMeta.FileUUID
+	userdata.FileOwners[sentFileName] = recieveFileShareMeta.Owner
+
+	//take care of 126 bytes limit
 	return nil
 }
 
