@@ -92,13 +92,14 @@ type User struct {
 	SharedFilesToUUID    map[string]userlib.UUID
 	MyFilesToUUID        map[string]userlib.UUID
 	FileOwners           map[string]string
-	FileNumAppends       map[string]int
-	// your username + filename + x, then hash          
+	SharingDataAccess    map[string]map[string]userlib.UUID
+	//FileNumAppends       map[string]int
+	//SignitureKeys		 map[string]userlib.DSSignKey
+	// your username + filename + x, then hash
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
 }
-
 
 type FileAccess struct {
 	//This maps users and where the keys for the files are stored for the users
@@ -107,21 +108,20 @@ type FileAccess struct {
 
 type FileShareMeta struct {
 	NumAppends int
-	Keys map[string][]byte
+	Keys       map[string][]byte
 }
-
 
 // Defining a useful struct
 type File struct {
 	//LOTS OF PEOPLE DO SHARES, BUT ONLY ONE PERSON NEEDS TO KNOW ABOUT IT
 	//maps integer to UUID of append...1: UUID of first appendage, 2: UUID of second appendage
 	NumAppends int
-	Contents []byte
-	Owner string
+	Contents   []byte
+	Owner      string
 	//TODO: KEEP TRACK OF OWNERS OF ANY FILES SHARED WITH U
 	//File X, use append map to find UUIDs of file struct of File Y and Z, from those structs, pull
 	//contents
-	//TODO: keep track of users with access 
+	//TODO: keep track of users with access
 }
 
 /*** USEFUL HELPER FUNCTIONS ***/
@@ -159,11 +159,12 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.Hashword = userlib.Hash(append([]byte(password), userlib.RandomBytes(16)...))
 
 	//Making maps
-	userdata.SharedFilesToUUID = make(map[string][]byte)
+	userdata.SharedFilesToUUID = make(map[string]userlib.UUID)
 	userdata.FindKeys = make(map[userlib.UUID]map[string][]byte)
-	userdata.MyFilesToUUID = make(map[string][]byte)
+	userdata.MyFilesToUUID = make(map[string]userlib.UUID)
 	userdata.FileOwners = make(map[string]string)
-	userdata.FileNumAppends = make(map[string]int)
+	userdata.SharingDataAccess = make(map[string]map[string]uuid.UUID)
+	//userdata.FileNumAppends = make(map[string]int)
 
 	//Serializing our user struct
 	serial, _ := json.Marshal(userdata)
@@ -179,7 +180,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//Storing public RSA key in Keystore
 	userlib.KeystoreSet(username, userdata.PublicRSAKey)
-
 
 	//Return error for non-unique username
 	return &userdata, nil
@@ -278,7 +278,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	userdata.MyFilesToUUID[string(UUIDSeed)] = storageKey
 	//Adding to ownership map
 	userdata.FileOwners[string(UUIDSeed)] = userdata.Username
-	//TODO: ADD UUID OF FILE TO FILENAME -> UUID MAP IN USER STRUCT 
+	//TODO: ADD UUID OF FILE TO FILENAME -> UUID MAP IN USER STRUCT
 
 	return
 }
@@ -313,8 +313,8 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 
 	verificationHMAC, _ := userlib.HMACEval(keysToDecrypt["HMAC"], encryptedPulledFileData)
 
-	if (!userlib.HMACEqual(hmacOfPulledFile, verificationHMAC)) {
-		return errors.New("integrity could not be verified") 
+	if !userlib.HMACEqual(hmacOfPulledFile, verificationHMAC) {
+		return errors.New("integrity could not be verified")
 	}
 
 	//Decrypting the original File struct to change number of appendages
@@ -348,7 +348,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	appendageKeys["AES-CFB"] = encryption_key_appendage
 	appendageKeys["HMAC"] = hmac_key_appendage
 
-	if (userdata.FileOwners[filename] == userdata.Username) {
+	if userdata.FileOwners[filename] == userdata.Username {
 		userdata.MyFilesToUUID[string(UUIDSeed)] = UUIDToStoreAppend
 	} else {
 		userdata.SharedFilesToUUID[string(UUIDSeed)] = UUIDToStoreAppend
@@ -373,32 +373,30 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 	// return dataBytes, nil
 	//End of toy implementation
 
-
 	//Pulling original file'd UUID
 	var originalUUID userlib.UUID
 	var finalFile []byte
 
 	originalUUID, ok := userdata.MyFilesToUUID[filename]
-	if (!ok) {
+	if !ok {
 		originalUUID, ok2 := userdata.SharedFilesToUUID[filename]
-		if (!ok2) {
+		if !ok2 {
 			return nil, errors.New("File don't exist")
 		}
 	}
 
 	//Pulling the file struct for original file
 	encryptedPulledFileData, _ := userlib.DatastoreGet(originalUUID)
-	HMACencryptedPulledFileData := encryptedPulledFileData[len(encryptedPulledFileData) - 64:]
+	HMACencryptedPulledFileData := encryptedPulledFileData[len(encryptedPulledFileData)-64:]
 
 	//Pulling keys for file decryption
 	verificationHMAC, _ := userlib.HMACEval(userdata.FindKeys[originalUUID]["HMAC"], encryptedPulledFileData)
-	if (!userlib.HMACEqual(HMACencryptedPulledFileData, verificationHMAC)) {
+	if !userlib.HMACEqual(HMACencryptedPulledFileData, verificationHMAC) {
 		return nil, errors.New("Integrity issue")
 	}
 
-
 	//decrypting original File's struct
-	decryptedSerializedOriginalData := userlib.SymDec(userdata.FindKeys[originalUUID]["AES-CFB"], encryptedPulledFileData[:len(encryptedPulledFileData) - 64])
+	decryptedSerializedOriginalData := userlib.SymDec(userdata.FindKeys[originalUUID]["AES-CFB"], encryptedPulledFileData[:len(encryptedPulledFileData)-64])
 	var filedataTest File
 	filedataptrTest := &filedataTest
 	json.Unmarshal(decryptedSerializedOriginalData, filedataptrTest)
@@ -409,24 +407,23 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 		appendageUUID, _ := uuid.FromBytes(UUIDSeed[:16])
 
 		encryptedData, _ := userlib.DatastoreGet(appendageUUID)
-		HMACencryptedPulledFileData := encryptedData[len(encryptedData) - 64:]
+		HMACencryptedPulledFileData := encryptedData[len(encryptedData)-64:]
 
 		//Pulling keys for file decryption
 		verificationHMAC, _ := userlib.HMACEval(userdata.FindKeys[originalUUID]["HMAC"], encryptedData)
-		if (!userlib.HMACEqual(HMACencryptedPulledFileData, verificationHMAC)) {
+		if !userlib.HMACEqual(HMACencryptedPulledFileData, verificationHMAC) {
 			return nil, errors.New("Integrity issue")
 		}
 
 		//decrypting original File's struct
-		decryptedSerializedAppendageData := userlib.SymDec(userdata.FindKeys[originalUUID]["AES-CFB"], encryptedData[:len(encryptedPulledFileData) - 64])
-		
+		decryptedSerializedAppendageData := userlib.SymDec(userdata.FindKeys[originalUUID]["AES-CFB"], encryptedData[:len(encryptedPulledFileData)-64])
+
 		var filedataTestAppendage File
 		filedataptrTestAppendage := &filedataTestAppendage
 		json.Unmarshal(decryptedSerializedAppendageData, filedataptrTestAppendage)
 		finalFile = append(finalFile, filedataTestAppendage.Contents...)
 	}
 
-	
 	return finalFile, nil
 }
 
@@ -435,7 +432,64 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 func (userdata *User) ShareFile(filename string, recipient string) (
 	accessToken uuid.UUID, err error) {
 
-	return
+	// instanciate a new file share metadata
+	var newFileShareMeta FileShareMeta
+
+	// pulling original file to get # of append
+	originalUUID, ok := userdata.MyFilesToUUID[filename]
+	if !ok {
+		originalUUID, ok2 := userdata.SharedFilesToUUID[filename]
+		if !ok2 {
+			return nil, errors.New("File don't exist")
+		}
+	}
+
+	//Pulling the file struct for original file
+	encryptedPulledFileData, _ := userlib.DatastoreGet(originalUUID)
+	HMACencryptedPulledFileData := encryptedPulledFileData[len(encryptedPulledFileData)-64:]
+
+	//Pulling keys for file decryption
+	//possible pitfall with returning new random UUID when encountering an error
+	verificationHMAC, _ := userlib.HMACEval(userdata.FindKeys[originalUUID]["HMAC"], encryptedPulledFileData)
+	if !userlib.HMACEqual(HMACencryptedPulledFileData, verificationHMAC) {
+		return uuid.New(), errors.New("Integrity issue")
+	}
+
+	//decrypting original File's struct
+	decryptedSerializedOriginalData := userlib.SymDec(userdata.FindKeys[originalUUID]["AES-CFB"], encryptedPulledFileData[:len(encryptedPulledFileData)-64])
+	var filedataTest File
+	filedataptrTest := &filedataTest
+	json.Unmarshal(decryptedSerializedOriginalData, filedataptrTest)
+
+	newFileShareMeta.NumAppends = filedataTest.NumAppends
+	newFileShareMeta.Keys["HMAC"] = userdata.FindKeys[originalUUID]["HMAC"]
+	newFileShareMeta.Keys["AES-CFB"] = userdata.FindKeys[originalUUID]["AES-CFB"]
+
+	// serializing share file meta struct
+	jsonData, _ := json.Marshal(newFileShareMeta)
+
+	// pulling recipient's RSA key
+	//possible pitfall with returning new random UUID when encountering an error
+	recipientPublicRSAKey, ok3 := userlib.KeystoreGet(recipient)
+	if !ok3 {
+		return uuid.New(), errors.New("User does not exist.")
+	}
+	//encrypting share file meta struct
+	encryptedData, _ := userlib.PKEEnc(recipientPublicRSAKey, jsonData)
+	//HMACing encrypted data
+	HMACencryptedData, _ := userlib.HMACEval(userdata.FindKeys[originalUUID]["HMAC"], encryptedData)
+	//appending HMAC to encryption
+	encryptHMACData := append(encryptedData, HMACencryptedData...)
+	//signing
+	signature, _ := userlib.DSSign(userdata.PrivateRSAKey, encryptHMACData)
+	//appending signature to HMACed encryption
+	signedEnctyptedHMACData := append(encryptHMACData, signature...)
+	//generating a random UUID and storing in sharing access map
+	newRandomUUID := uuid.New()
+	userdata.SharingDataAccess[filename][recipient] = newRandomUUID
+	//storing the signed HMACed and encrypted data to Datastore
+	userlib.DatastoreSet(newRandomUUID, signedEnctyptedHMACData)
+	return newRandomUUID, nil
 }
 
 // ReceiveFile is documented at:
