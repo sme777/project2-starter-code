@@ -7,6 +7,7 @@ package proj2
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/cs161-staff/userlib"
 
@@ -263,13 +264,13 @@ func (userdata *User) PullFile(filename string) (theFilePtr *File, err error) {
 	storageKey, filenameExists := userdata.FileNamesToUUID[filename]
 	
 	if (!filenameExists) {
-		return nil, errors.New("Invalid filename supplied for pulling")
+		return nil, errors.New("invalid filename supplied for pulling")
 	}
 
 	supposedFile, fileExists := userlib.DatastoreGet(storageKey)
 
 	if (!fileExists) {
-		return nil, errors.New("No such file exists in Datastore")
+		return nil, errors.New("no such file exists in Datastore")
 	}
 
 	pulledHMAC := supposedFile[len(supposedFile) - 64:]
@@ -285,7 +286,7 @@ func (userdata *User) PullFile(filename string) (theFilePtr *File, err error) {
 	//verifying HMAC of file
 	ownComputedHMAC, _ := userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], decryptedSerializedFile)
 	if (userlib.HMACEqual(pulledHMAC, ownComputedHMAC)) {
-		return nil, errors.New("The file you're trying to pull has been tampered with")
+		return nil, errors.New("the file you're trying to pull has been tampered with")
 	}
 
 	return theFilePtr, nil
@@ -297,7 +298,7 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 	storageKey, doIHaveThis := userdata.FileNamesToUUID[filename]
 
 	if !doIHaveThis {
-		return nil, errors.New("You don't have such a file dufus.")
+		return nil, errors.New("you don't have such a file dufus.")
 	}
 
 	//Creating filesharemeta object
@@ -386,7 +387,7 @@ func (userdata *User) updateKeys(filename string) (err error) {
 	_, doIHaveThis := userdata.FileNamesToUUID[filename]
 
 	if !doIHaveThis {
-		return errors.New("You don't have such a file dufus.")
+		return errors.New("you don't have such a file dufus")
 	}
 
 	//Pulling most recent keys
@@ -404,7 +405,7 @@ func (userdata *User) updateKeys(filename string) (err error) {
 	verifyHMACCloud := FileCloudData[len(FileCloudData)-320 : len(FileCloudData)-256]
 	ok2 := userlib.HMACEqual(newHMAC, verifyHMACCloud)
 	if !ok2 {
-		return errors.New("Integirty/authencity issue.")
+		return errors.New("integirty/authencity issue")
 	}
 
 	userdata.FindKeys[filename]["HMAC"] = cloudFinal.Keys["HMAC"]
@@ -432,7 +433,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 
 	if exists {
 		if !doIHaveThis {
-			return errors.New("You don't have such a file dufus.")
+			return errors.New("you don't have such a file dufus")
 		}
 		userdata.updateKeys(filename)
 		//Encrypting the file struct
@@ -489,7 +490,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	jsonData, _ := json.Marshal(AppendData)
 
 	//Finding UUID and encryption keys of the original file to append to
-	storageKeyOriginal, _ := userdata.FileNamesToUUID[filename]
+	storageKeyOriginal := userdata.FileNamesToUUID[filename]
 
 	userdata.updateKeys(filename)
 
@@ -505,7 +506,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	userlib.DatastoreSet(storageKeyOriginal, append(encrypted_original_updated_data, hmac_original_updated_data...))
 
 	//Generating UUID to store appendage inside
-	UUIDSeed := userlib.Hash(append(keysToDecrypt["AES-CFB"], []byte(string(originalFileChanged.NumAppends))...))
+	UUIDSeed := userlib.Hash(append(keysToDecrypt["AES-CFB"], []byte(fmt.Sprint(originalFileChanged.NumAppends))...))
 	UUIDToStoreAppend, _ := uuid.FromBytes(UUIDSeed[:16])
 
 	//Encrypting and HMACing appendage
@@ -541,7 +542,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 	_, doIHaveThis := userdata.FileNamesToUUID[filename]
 
 	if !doIHaveThis {
-		return nil, errors.New("You don't have such a file dufus.")
+		return nil, errors.New("you don't have such a file dufus")
 	}
 	
 	userdata.updateKeys(filename)
@@ -552,7 +553,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 	finalFile.Contents = append(finalFile.Contents, originalFile.Contents...)
 
 	for i := 1; i < finalFile.NumAppends; i++ {
-		UUIDSeed := userlib.Hash(append(userdata.FindKeys[filename]["AES-CFB"], []byte(string(originalFile.NumAppends))...))
+		UUIDSeed := userlib.Hash(append(userdata.FindKeys[filename]["AES-CFB"], []byte(fmt.Sprint(originalFile.NumAppends))...))
 		appendageUUID, _ := uuid.FromBytes(UUIDSeed[:16])
 
 		encryptedData, _ := userlib.DatastoreGet(appendageUUID)
@@ -562,7 +563,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 		verificationHMAC, _ := userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encryptedData)
 
 		if !userlib.HMACEqual(HMACencryptedPulledFileData, verificationHMAC) {
-			return nil, errors.New("Integrity issue")
+			return nil, errors.New("integrity issue")
 		}
 
 		//decrypting original appendage file struct
@@ -598,14 +599,14 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	_, doIHaveThis := userdata.FileNamesToUUID[filename]
 
 	if !doIHaveThis {
-		return errors.New("You already have that file dufus.")
+		return errors.New("you already have that file dufus")
 	}
 
 	//pulling the file
 	recievedFileData, ok := userlib.DatastoreGet(accessToken)
 
 	if !ok {
-		return errors.New("Share does not exist or has been revoked.")
+		return errors.New("share does not exist or has been revoked")
 	}
 
 	//seperating Data, HMAC, Signiture
@@ -618,7 +619,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	//verifying sender
 	sigError := userlib.DSVerify(senderRSAKey, recievedFileData[:len(recievedFileData)-256], verifySignature)
 	if sigError != nil {
-		return errors.New("Sender could not be verified.")
+		return errors.New("sender could not be verified")
 	}
 
 	//getting sent HMAC key and Verifying HMAC
@@ -629,7 +630,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	newHMAC, _ := userlib.HMACEval(verifyHMAC, verifyData)
 	ok2 := userlib.HMACEqual(newHMAC, verifyHMAC)
 	if !ok2 {
-		return errors.New("Integirty/authencity issue.")
+		return errors.New("integirty/authencity issue")
 	}
 	
 	//updating filename to UUID for user
