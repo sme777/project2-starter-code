@@ -155,3 +155,59 @@ func TestShare(t *testing.T) {
 		return
 	}
 }
+
+// TestPUBLICSingleUserAppend:
+
+// file1data = "File 1 data woohoo"
+// file1dataAppend1 = " here is more yeet"
+// file1dataAppend2 = " and even more!!"
+
+// - u = InitUser("nick", "weaver")
+// - u.StoreFile("file1", file1data)
+// - u.AppendFile("file1", file1dataAppend1)
+// - u.AppendFile("file1", file1dataAppend2)
+// - u.LoadFile("file1")
+// - /* check for valid file load */
+
+func TestAppend0(t *testing.T) {
+	clear()
+
+	file1data := []byte("File 1 data woohoo")
+	file1dataAppend1 := []byte(" here is more yeet")
+	file1dataAppend2 := []byte(" and even more!!")
+
+	
+	u, err := InitUser("nick", "weaver")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	u.StoreFile("file1", file1data)
+	u.AppendFile("file1", file1dataAppend1)
+	u.AppendFile("file1", file1dataAppend2)
+
+	v1, err := u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+
+	v2 := append(file1data, file1dataAppend1...)
+	v2 = append(v2, file1dataAppend2...)
+
+	fmt.Println(string(v1))
+	fmt.Println(string(v2))
+
+	if !reflect.DeepEqual(v1, v2) {
+		t.Error("Appended file is not the same", v1, v2)
+		return
+	}
+
+
+
+
+
+
+
+}

@@ -161,11 +161,15 @@ func pad(unpaddedmsg []byte) ([]byte) {
 func depad(paddedmsg []byte) ([]byte) {
 	numberOfBytesToRemove := int(paddedmsg[len(paddedmsg) - 1])
 	startIndex := len(paddedmsg) - numberOfBytesToRemove
-	unpaddedMsg := make([]byte, startIndex)
-	for i := 0; i < startIndex; i++ {
-		unpaddedMsg[i] = paddedmsg[i]
+	if startIndex >= 0 {
+		unpaddedMsg := make([]byte, startIndex)
+		for i := 0; i < startIndex; i++ {
+			unpaddedMsg[i] = paddedmsg[i]
+		}
+		return unpaddedMsg
+	} else {
+		return paddedmsg
 	}
-	return unpaddedMsg
 }
 
 //This pulls and returns the file struct for a file from Datastore, given a filename
@@ -613,7 +617,6 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	userdata.updateKeys(filename)
 	//Finding UUID and encryption keys of the original file to append to
 	storageKeyOriginal := userdata.FileNamesToUUID[filename]
-	keysToDecrypt := userdata.FindKeys[filename]
 
 	var originalFileChanged File
 	originalFileChanged.Contents, originalFileChanged.NumAppends, _ = userdata.PullFile(filename)
@@ -621,19 +624,19 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 
 	//Re-encrypting and uploading the original file struct
 	jsonDataOriginalAppendUpdate, _ := json.Marshal(originalFileChanged)
-	var encrypted_original_updated_data = userlib.SymEnc(keysToDecrypt["AES-CFB"], userlib.RandomBytes(16), pad(jsonDataOriginalAppendUpdate))
-	var hmac_original_updated_data, _ = userlib.HMACEval(keysToDecrypt["HMAC"], encrypted_original_updated_data)
+	var encrypted_original_updated_data = userlib.SymEnc(userdata.FindKeys[filename]["AES-CFB"], userlib.RandomBytes(16), pad(jsonDataOriginalAppendUpdate))
+	var hmac_original_updated_data, _ = userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encrypted_original_updated_data)
 	userlib.DatastoreSet(storageKeyOriginal, append(encrypted_original_updated_data, hmac_original_updated_data...))
 
 	//Generating UUID to store appendage inside
 	byteArrayToHoldInt := make([]byte, 1)
 	byteArrayToHoldInt[0] = byte(originalFileChanged.NumAppends)
-	UUIDSeed := userlib.Hash(append(keysToDecrypt["AES-CFB"], byteArrayToHoldInt...))
+	UUIDSeed := userlib.Hash(append(userdata.FindKeys[filename]["AES-CFB"], byteArrayToHoldInt...))
 	UUIDToStoreAppend, _ := uuid.FromBytes(UUIDSeed[:16])
 
 	//Encrypting and HMACing appendage
-	var encrypted_appendage = userlib.SymEnc(keysToDecrypt["AES-CFB"], userlib.RandomBytes(16), pad(jsonData))
-	var hmac_appendage, _ = userlib.HMACEval(keysToDecrypt["HMAC"], encrypted_appendage)
+	var encrypted_appendage = userlib.SymEnc(userdata.FindKeys[filename]["AES-CFB"], userlib.RandomBytes(16), pad(jsonData))
+	var hmac_appendage, _ = userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encrypted_appendage)
 
 	//uploading appendage to datastore
 	userlib.DatastoreSet(UUIDToStoreAppend, append(encrypted_appendage, hmac_appendage...))
@@ -674,9 +677,9 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 
 	finalFile.Contents = append(finalFile.Contents, originalFile.Contents...)
 
-	for i := 1; i < finalFile.NumAppends; i++ {
+	for i := 1; i < finalFile.NumAppends + 1; i++ {
 		byteArrayToHoldInt := make([]byte, 1)
-		byteArrayToHoldInt[0] = byte(originalFile.NumAppends)
+		byteArrayToHoldInt[0] = byte(i)
 		UUIDSeed := userlib.Hash(append(userdata.FindKeys[filename]["AES-CFB"], byteArrayToHoldInt...))
 		appendageUUID, _ := uuid.FromBytes(UUIDSeed[:16])
 
@@ -684,7 +687,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 		HMACencryptedPulledFileData := encryptedData[len(encryptedData)-64:]
 
 		//Pulling keys for file decryption
-		verificationHMAC, _ := userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encryptedData)
+		verificationHMAC, _ := userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encryptedData[:len(encryptedData)-64])
 
 		if !userlib.HMACEqual(HMACencryptedPulledFileData, verificationHMAC) {
 			return nil, errors.New("integrity issue")
