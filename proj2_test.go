@@ -126,10 +126,3 @@ func TestShare(t *testing.T) {
 		return
 	}
 }
-
-
-
-alice creates file1
-bob creates file1
-alice shares file1 with bob, sharefle(file1, bob)
-bob can do receive(file2, alice)
