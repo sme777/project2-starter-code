@@ -7,6 +7,7 @@ import (
 	_ "encoding/hex"
 	_ "encoding/json"
 	_ "errors"
+	"fmt"
 	"reflect"
 	_ "strconv"
 	_ "strings"
@@ -41,6 +42,34 @@ func TestInit(t *testing.T) {
 	// If you want to comment the line above,
 	// write _ = u here to make the compiler happy
 	// You probably want many more tests here.
+}
+
+func TestGet(t *testing.T) {
+	clear()
+	t.Log("Initialization test")
+
+	// You can set this to false!
+	userlib.SetDebugStatus(true)
+
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	// t.Log() only produces output if you run with "go test -v"
+	t.Log("Got user", u)
+	// If you want to comment the line above,
+	// write _ = u here to make the compiler happy
+	// You probably want many more tests here.
+	u2, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to get user", err)
+		return
+	}
+	if !reflect.DeepEqual(u2, u) {
+		fmt.Println("poo")
+	}
 }
 
 func TestStorage(t *testing.T) {

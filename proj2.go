@@ -105,6 +105,11 @@ type User struct {
 	TreesIUpdateLoc      map[string]userlib.UUID
 	TreesIUpdateKeys     map[string]map[string][]byte
 
+	//storing signature keys
+	privateSign userlib.DSSignKey
+	publicSign userlib.DSVerifyKey
+
+
 	//FileNumAppends       map[string]int
 	//SignitureKeys		 map[string]userlib.DSSignKey
 	// your username + filename + x, then hash
@@ -435,6 +440,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.FilenamesToMyCloudKeys = make(map[string]map[string][]byte)
 	//userdata.FileNumAppends = make(map[string]int)
 
+	//Generating signature keys
+	userdata.privateSign, userdata.publicSign, _ = userlib.DSKeyGen()
+
 	//Serializing our user struct
 	serial, _ := json.Marshal(userdata)
 
@@ -452,6 +460,8 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	//Storing public RSA key in Keystore
 	userlib.KeystoreSet(username, userdata.PublicRSAKey)
 
+	//Storing public Sign key in Keystore
+
 	//Return error for non-unique username
 	return &userdata, nil
 }
@@ -459,7 +469,11 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // GetUser is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/getuser.html
 func GetUser(username string, password string) (userdataptr *User, err error) {
-	//TODO: CHECK USERNAME AND PASSWORD
+	//checking if user was initialized
+	_, initialized := userlib.KeystoreGet(username)
+	if !initialized {
+		return nil, errors.New("user has not been initialized")
+	}
 	var userdata User
 	userdataptr = &userdata
 
@@ -468,7 +482,10 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	DataStoreUUID, _ := uuid.FromBytes(DataStoreLocationKey)
 
 	//Getting the encrypted data from DataStore
-	encryptedRetrievedData, _ := userlib.DatastoreGet(DataStoreUUID)
+	encryptedRetrievedData, doesItExist := userlib.DatastoreGet(DataStoreUUID)
+	if !doesItExist {
+		return nil, errors.New("user not found, probably invalid credentials")
+	}
 
 	//Verifying authenticity/integritysignedEnctyptedHMACDataCloud
 
@@ -698,7 +715,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	//verifying that the file does not exist
 	_, doIHaveThis := userdata.FileNamesToUUID[filename]
 
-	if !doIHaveThis {
+	if doIHaveThis {
 		return errors.New("you already have that file dufus")
 	}
 
