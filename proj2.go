@@ -242,7 +242,7 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 	encryptedHMACdAccessToken := append(encryptedToken, HMACofAccessToken...)
 
 	//signing
-	signature, _ := userlib.DSSign(userdata.PrivateRSAKey, encryptedHMACdAccessToken)
+	signature, _ := userlib.DSSign(userdata.privateSign, encryptedHMACdAccessToken)
 	//appending signature to HMACed encryption of access token
 	signedEnctyptedHMACAccessToken := append(encryptedHMACdAccessToken, signature...)
 	//generating access token UUID
@@ -379,7 +379,8 @@ func (userdata *User) updateKeys(filename string) (err error) {
 
 	//getting sent HMAC key and Verifying HMAC of Cloud
 	decryptedSerializedDataCloud := userlib.SymDec(userdata.FilenamesToMyCloudKeys[filename]["AES-CFB"], cloudDataToDecrypt)
-	computedHMAC, _ := userlib.HMACEval(userdata.FilenamesToMyCloudKeys[filename]["HMAC"], decryptedSerializedDataCloud)
+	decryptedSerializedDataCloud = depad(decryptedSerializedDataCloud)
+	computedHMAC, _ := userlib.HMACEval(userdata.FilenamesToMyCloudKeys[filename]["HMAC"], cloudDataToDecrypt)
 
 	if !userlib.HMACEqual(computedHMAC, pulledCloudHMAC) {
 		return errors.New("someone messed with yo cloud")
@@ -389,8 +390,12 @@ func (userdata *User) updateKeys(filename string) (err error) {
 	cloudFinalPtr := &cloudFinal
 	json.Unmarshal(decryptedSerializedDataCloud, cloudFinalPtr)
 
-	userdata.FindKeys[filename]["HMAC"] = cloudFinal.Keys["HMAC"]
-	userdata.FindKeys[filename]["AES-CFB"] = cloudFinal.Keys["AES-CFB"]
+	filesKeyHolder := make(map[string][]byte)
+	filesKeyHolder["AES-CFB"] = cloudFinal.Keys["AES-CFB"]
+	filesKeyHolder["HMAC"] = cloudFinal.Keys["HMAC"]
+
+	userdata.FindKeys[filename] = filesKeyHolder
+	userdata.FileNamesToUUID[filename] = cloudFinal.FileUUID
 	return
 }
 /*** USEFUL HELPER FUNCTIONS END ***/
@@ -440,12 +445,18 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.FilenamesToMyCloudKeys = make(map[string]map[string][]byte)
 	//userdata.FileNumAppends = make(map[string]int)
 
-	//Generating signature keys
-	userdata.privateSign, userdata.publicSign, _ = userlib.DSKeyGen()
+	//generating signature
+	//Storing public Sign key in Keystore
+	privSign, pubSign, _ := userlib.DSKeyGen()
+	userdata.privateSign = privSign
+	userdata.publicSign = pubSign
+
+	//Storing public sign key key in Keystore
+	signname := string(userlib.Hash([]byte("signature"))) + string(userlib.Hash([]byte(username)))
+	userlib.KeystoreSet(signname, userdata.publicSign)
 
 	//Serializing our user struct
 	serial, _ := json.Marshal(userdata)
-
 
 	//Encrypting userdata
 	encryptedUserData := userlib.SymEnc(userdata.FileEncKey, userlib.RandomBytes(16), pad(serial))
@@ -457,10 +468,8 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	//Storing in DataStore
 	userlib.DatastoreSet(userdata.DataStoreUUID, append(encryptedUserData, HMACofEncryptedUserData...))
 
-	//Storing public RSA key in Keystore
+	//Storing user in Keystore
 	userlib.KeystoreSet(username, userdata.PublicRSAKey)
-
-	//Storing public Sign key in Keystore
 
 	//Return error for non-unique username
 	return &userdata, nil
@@ -601,11 +610,9 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	AppendData.Contents = data
 	jsonData, _ := json.Marshal(AppendData)
 
+	userdata.updateKeys(filename)
 	//Finding UUID and encryption keys of the original file to append to
 	storageKeyOriginal := userdata.FileNamesToUUID[filename]
-
-	userdata.updateKeys(filename)
-
 	keysToDecrypt := userdata.FindKeys[filename]
 
 	var originalFileChanged File
@@ -731,29 +738,60 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	verifyHMAC := recievedFileData[len(recievedFileData)-320 : len(recievedFileData)-256]
 	verifyData := recievedFileData[:len(recievedFileData)-320]
 
-	//getting sender's public rsa key
-	senderRSAKey, _ := userlib.KeystoreGet(sender)
+	//getting sender's public sign key
+	signname := string(userlib.Hash([]byte("signature"))) + string(userlib.Hash([]byte(sender)))
+	verifyKey, _ := userlib.KeystoreGet(signname)
+	
 	//verifying sender
-	sigError := userlib.DSVerify(senderRSAKey, recievedFileData[:len(recievedFileData)-256], verifySignature)
+	sigError := userlib.DSVerify(verifyKey, recievedFileData[:len(recievedFileData)-256], verifySignature)
 	if sigError != nil {
 		return errors.New("sender could not be verified")
 	}
 
 	//getting sent HMAC key and Verifying HMAC
 	decryptedData, _ := userlib.PKEDec(userdata.PrivateRSAKey, verifyData)
-	var recieveFileShareMeta FileShareMeta
-	recieveFileShareMetaPtr := &recieveFileShareMeta
-	json.Unmarshal(decryptedData, recieveFileShareMetaPtr)
-	newHMAC, _ := userlib.HMACEval(verifyHMAC, verifyData)
-	ok2 := userlib.HMACEqual(newHMAC, verifyHMAC)
+
+	//getting send cloud UUID
+	cloudUUIDSeed := decryptedData[:16]
+	cloudUUID, _ := uuid.FromBytes(cloudUUIDSeed)
+	//getting sent aes cfb key
+	cloudEnc := decryptedData[16:32]
+	//getting sent hmac key
+	cloudHMAC := decryptedData[32:]
+
+	//veryifying HMAC
+	computedTokenHMAC, _ := userlib.HMACEval(cloudHMAC, verifyData)
+	ok2 := userlib.HMACEqual(computedTokenHMAC, verifyHMAC)
 	if !ok2 {
 		return errors.New("integirty/authencity issue")
 	}
-	
+
+	//Accessing cloud data
+	encryptedSerializedData, _ := userlib.DatastoreGet(cloudUUID)
+	//verifying HMAC of cloud
+	pulledHMACofCloud := encryptedSerializedData[len(encryptedSerializedData)-64:]
+	//decrypting cloud structure
+	decryptedSerializedData := userlib.SymDec(cloudEnc, encryptedSerializedData[:len(encryptedSerializedData)-64])
+	decryptedSerializedData = depad(decryptedSerializedData)
+	//verifying hmac of cloud struct 
+	computedCloudHMAC, _ := userlib.HMACEval(cloudHMAC, encryptedSerializedData[:len(encryptedSerializedData)-64])
+	okcloud := userlib.HMACEqual(pulledHMACofCloud, computedCloudHMAC)
+	if !okcloud {
+		return errors.New("integirty/authencity issue with cloud")
+	}
+
+	var recieveFileShareMeta FileShareMeta
+	recieveFileShareMetaPtr := &recieveFileShareMeta
+	json.Unmarshal(decryptedSerializedData, recieveFileShareMetaPtr)
+
 	//updating filename to UUID for user
 	userdata.FileNamesToUUID[filename] = recieveFileShareMeta.FileUUID
-	userdata.FilenamesToCloud[filename] = accessToken
-
+	userdata.FilenamesToCloud[filename] = cloudUUID
+	myCloudKeysHolder := make(map[string][]byte)
+	myCloudKeysHolder["HMAC"] = cloudHMAC
+	myCloudKeysHolder["AES-CFB"] = cloudEnc
+	userdata.FilenamesToMyCloudKeys[filename] = myCloudKeysHolder
+	
 	//updating key-maps for recieving user
 	userdata.updateKeys(filename)
 
