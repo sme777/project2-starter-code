@@ -210,7 +210,7 @@ func (userdata *User) PullFile(filename string) (contents []byte, numApp int, er
 //Return UUID of cloud, then access token
 func (userdata *User) makeCloud(filename string, sender string, recipient string) (returnedCloudUUID *userlib.UUID, accessTokenID *userlib.UUID, err error) {
 	storageKey, doIHaveThis := userdata.FileNamesToUUID[filename]
-
+	var err1 error 
 	if !doIHaveThis {
 		return nil, nil, errors.New("you don't have such a file dufus")
 	}
@@ -234,7 +234,7 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 	cloudUUID, _ := uuid.FromBytes(cloudUUIDSeed)
 	
 	//Creating and encrypting access token
-	myPublicRSAKey, _ := userlib.KeystoreGet(recipient)
+	myPublicRSAKey, kexist := userlib.KeystoreGet(recipient)
 	accessToken := append(cloudUUIDSeed, cloudEncKey...)
 	accessToken = append(accessToken, cloudHMACKey...)
  
@@ -326,10 +326,10 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 		ShareTreePtr := &ShareTree
 		json.Unmarshal(decryptedShareTreeSerialized, ShareTreePtr)
 
-
+		shareMap := make(map[string]userlib.UUID)
+		shareMap[recipient] = cloudUUID
 		//Creating and uploading tree struct
-		ShareTree.ISharedWith[recipient] = cloudUUID
-
+		ShareTree.ISharedWith = shareMap
 		keyHolderForSharee := make(map[string][]byte)
 		keyHolderForSharee["HMAC"] = treeHMAC
 		keyHolderForSharee["AES-CFB"] = treeEnc
@@ -364,7 +364,13 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 		userdata.FilenamesToMyCloudKeys[filename] = myCloudKeyHolder
 	}
 
-	return &cloudUUID, &accessTokenUUID, nil
+	if !kexist {
+		err1 = errors.New("keystore key doesn't have value")
+	} else {
+		err1 = nil
+	}
+
+	return &cloudUUID, &accessTokenUUID, err1
 }
 
 //Fetches the most recent keys for a file, also updating the user's findKeys
@@ -607,7 +613,10 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//TODO: Write file verify helper function
 	//TODO: DONT NEED TO GENERATE ORIGINAL UUID, CAN JUST PULL FROM FILENAME -> UUID MAP IN USER STRUCT
-
+	_, supposedExist := userdata.FileNamesToUUID[filename]
+	if !supposedExist {
+		return errors.New("File doesn't exist, dummy")
+	}
 	//Initializing a File struct for storing the appendage
 	var AppendData File
 	AppendData.NumAppends = 0
@@ -743,7 +752,10 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 	//getting sender's public sign key
 	signname := string(userlib.Hash([]byte("signature"))) + string(userlib.Hash([]byte(sender)))
-	verifyKey, _ := userlib.KeystoreGet(signname)
+	verifyKey, kexist := userlib.KeystoreGet(signname)
+	if !kexist {
+		return errors.New("keystore key doesn't have value")
+	}
 	
 	//verifying sender
 	sigError := userlib.DSVerify(verifyKey, recievedFileData[:len(recievedFileData)-256], verifySignature)
@@ -853,11 +865,14 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 	return
 }
 
-func (userdata *User) RevokeHelper(childorigin string, child string, filename string, newUUID *userlib.UUID, newHMAC []byte, newEnc []byte, childCloudUUID *userlib.UUID) {
+func (userdata *User) RevokeHelper(childorigin string, child string, filename string, newUUID *userlib.UUID, newHMAC []byte, newEnc []byte, childCloudUUID *userlib.UUID) (err error){
 	//base case
 
 	//child's publicRSA key
-	childsRSAKey, _ := userlib.KeystoreGet(child)
+	childsRSAKey, kexist := userlib.KeystoreGet(child)
+	if !kexist {
+		return errors.New("keystore key doesn't have value")
+	}
 	//creating new cloud
 	var FileShareMetaNew FileShareMeta
 	FileShareMetaNew.FileUUID = *newUUID
@@ -882,4 +897,5 @@ func (userdata *User) RevokeHelper(childorigin string, child string, filename st
 
 	//writing new metadata cloud
 	userlib.DatastoreSet(*childCloudUUID, childCloudNew)
+	return
 }
