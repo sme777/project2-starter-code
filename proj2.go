@@ -821,6 +821,14 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 // RevokeFile is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/revokefile.html
 func (userdata *User) RevokeFile(filename string, targetUsername string) (err error) {
+	_, fileInMySpace := userdata.FileNamesToUUID[filename]
+	if !fileInMySpace {
+		return errors.New("you don't have such a filename")
+	}
+	_, supposedShare := userdata.Ancestry[filename][targetUsername]
+	if !supposedShare {
+		return errors.New("you haven't shared with this user")
+	}
 
 	//new UUID to store file in
 	newUUIDSeed := userlib.Hash(append([]byte(filename),userlib.RandomBytes(16)...))
@@ -834,6 +842,7 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 	//re-encrypting original file and uploading to new UUID
 	newEncKey := userlib.Argon2Key(append(userlib.RandomBytes(16), userdata.Hashword...), userlib.RandomBytes(16), 16)
 	newHMACKey := userlib.Argon2Key(append(userlib.RandomBytes(16), userdata.Hashword...), userlib.RandomBytes(16), 16)
+	
 	userdata.FindKeys[filename]["AES-CFB"] = newEncKey
 	userdata.FindKeys[filename]["HMAC"] = newHMACKey
 	var encrypted_data = userlib.SymEnc(userdata.FindKeys[filename]["AES-CFB"], userlib.RandomBytes(16), pad(serializedOriginal))
