@@ -7,6 +7,7 @@ package proj2
 
 import (
 	"bytes"
+
 	"github.com/cs161-staff/userlib"
 
 	// The JSON library will be useful for serializing go structs.
@@ -90,23 +91,22 @@ type User struct {
 	Hashword             []byte
 	FileNamesToUUID      map[string]uuid.UUID
 	//SharingDataAccess    map[string]map[string]userlib.UUID
-	FilenamesToCloud     map[string]uuid.UUID
-	FilesIOwn			 map[string]uuid.UUID
+	FilenamesToCloud                map[string]uuid.UUID
+	FilesIOwn                       map[string]uuid.UUID
 	FilenamesToUsernamesToCloudKeys map[string]map[string]map[string][]byte
-	FilenamesToMyCloudKeys map[string]map[string][]byte
+	FilenamesToMyCloudKeys          map[string]map[string][]byte
 
 	//points to who shared with (filename)(username)(cloud uuid)
-	Ancestry             map[string]map[string]uuid.UUID
-	AncestryKeys         map[string]map[string]map[string] []byte
+	Ancestry     map[string]map[string]uuid.UUID
+	AncestryKeys map[string]map[string]map[string][]byte
 
 	//points to trees for files I need to update
-	TreesIUpdateLoc      map[string]uuid.UUID
-	TreesIUpdateKeys     map[string]map[string][]byte
+	TreesIUpdateLoc  map[string]uuid.UUID
+	TreesIUpdateKeys map[string]map[string][]byte
 
 	//storing signature keys
 	privateSign userlib.DSSignKey
-	publicSign userlib.DSVerifyKey
-
+	publicSign  userlib.DSVerifyKey
 
 	//FileNumAppends       map[string]int
 	//SignitureKeys		 map[string]userlib.DSSignKey
@@ -118,14 +118,14 @@ type User struct {
 
 type FileShareMeta struct {
 	UUIDofFileTree uuid.UUID
-	TreeKeys   map[string][]byte
+	TreeKeys       map[string][]byte
 
-	FileUUID   uuid.UUID
-	Keys       map[string][]byte
+	FileUUID uuid.UUID
+	Keys     map[string][]byte
 }
 
 type FileTree struct {
-	SharedWith map[string][]byte
+	SharedWith     map[string][]byte
 	SharedWithKeys map[string]map[string][]byte
 }
 
@@ -142,9 +142,9 @@ type File struct {
 }
 
 /*** USEFUL HELPER FUNCTIONS ***/
-func pad(unpaddedmsg []byte) ([]byte) {
+func pad(unpaddedmsg []byte) []byte {
 	msgLen := len(unpaddedmsg)
-	n := ((msgLen + 16 - 1) / 16 ) * 16 
+	n := ((msgLen + 16 - 1) / 16) * 16
 	paddedmsg := make([]byte, n)
 
 	for i := 0; i < msgLen; i++ {
@@ -156,8 +156,8 @@ func pad(unpaddedmsg []byte) ([]byte) {
 	return paddedmsg
 }
 
-func depad(paddedmsg []byte) ([]byte) {
-	numberOfBytesToRemove := int(paddedmsg[len(paddedmsg) - 1])
+func depad(paddedmsg []byte) []byte {
+	numberOfBytesToRemove := int(paddedmsg[len(paddedmsg)-1])
 	startIndex := len(paddedmsg) - numberOfBytesToRemove
 	if startIndex >= 0 {
 		unpaddedMsg := make([]byte, startIndex)
@@ -171,17 +171,17 @@ func depad(paddedmsg []byte) ([]byte) {
 }
 
 //This pulls and returns the file struct for a file from Datastore, given a filename
-//Errors if no such file exists in filespace 
+//Errors if no such file exists in filespace
 func (userdata *User) PullFile(filename string) (contents []byte, numApp int, err error) {
 	userdata.updateKeys(filename)
 	storageKey, filenameExists := userdata.FileNamesToUUID[filename]
-	if (!filenameExists) {
+	if !filenameExists {
 		return nil, 0, errors.New("invalid filename supplied for pulling")
 	}
 
 	supposedFile, fileExists := userlib.DatastoreGet(storageKey)
 
-	if (!fileExists) {
+	if !fileExists {
 		return nil, 0, errors.New("no such file exists in Datastore")
 	}
 
@@ -189,8 +189,8 @@ func (userdata *User) PullFile(filename string) (contents []byte, numApp int, er
 		return nil, 0, errors.New("something wrong with length")
 	}
 
-	pulledHMAC := supposedFile[len(supposedFile) - 64:]
-	encryptedFileData := supposedFile[:len(supposedFile) - 64]
+	pulledHMAC := supposedFile[len(supposedFile)-64:]
+	encryptedFileData := supposedFile[:len(supposedFile)-64]
 
 	//decrypting serialized file data
 	decryptedSerializedFile := userlib.SymDec(userdata.FindKeys[filename]["AES-CFB"], encryptedFileData)
@@ -201,7 +201,7 @@ func (userdata *User) PullFile(filename string) (contents []byte, numApp int, er
 
 	//verifying HMAC of file
 	ownComputedHMAC, _ := userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], decryptedSerializedFile)
-	if (userlib.HMACEqual(pulledHMAC, ownComputedHMAC)) {
+	if userlib.HMACEqual(pulledHMAC, ownComputedHMAC) {
 		return nil, 0, errors.New("the file you're trying to pull has been tampered with")
 	}
 
@@ -212,7 +212,7 @@ func (userdata *User) PullFile(filename string) (contents []byte, numApp int, er
 //Return UUID of cloud, then access token
 func (userdata *User) makeCloud(filename string, sender string, recipient string) (returnedCloudUUID *uuid.UUID, accessTokenID *uuid.UUID, err error) {
 	storageKey, doIHaveThis := userdata.FileNamesToUUID[filename]
-	var err1 error 
+	var err1 error
 	if !doIHaveThis {
 		return nil, nil, errors.New("you don't have such a file dufus")
 	}
@@ -226,25 +226,25 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 	filesCloud.Keys = filesCloudKeysMap
 
 	//Generating Enc Key for Cloud
-	cloudEncKey := userlib.Argon2Key(append(userdata.Hashword, []byte(filename + "cloudenc")...), userlib.RandomBytes(16), 16)
+	cloudEncKey := userlib.Argon2Key(append(userdata.Hashword, []byte(filename+"cloudenc")...), userlib.RandomBytes(16), 16)
 
 	//Generating HMAC Key for Cloud
-	cloudHMACKey := userlib.Argon2Key(append(userdata.Hashword, []byte(filename + "cloudhash")...), userlib.RandomBytes(16), 16)
+	cloudHMACKey := userlib.Argon2Key(append(userdata.Hashword, []byte(filename+"cloudhash")...), userlib.RandomBytes(16), 16)
 
 	//Generating UUID for cloud
 	cloudUUIDSeed := userlib.RandomBytes(16)
 	cloudUUID, _ := uuid.FromBytes(cloudUUIDSeed)
-	
+
 	//Creating and encrypting access token
 	myPublicRSAKey, kexist := userlib.KeystoreGet(recipient)
 	accessToken := append(cloudUUIDSeed, cloudEncKey...)
 	accessToken = append(accessToken, cloudHMACKey...)
- 
+
 	//Encrypting access token
 	encryptedToken, _ := userlib.PKEEnc(myPublicRSAKey, accessToken)
 
 	//HMACing access token
-	HMACofAccessToken, _ := userlib.HMACEval(cloudHMACKey,encryptedToken)
+	HMACofAccessToken, _ := userlib.HMACEval(cloudHMACKey, encryptedToken)
 	encryptedHMACdAccessToken := append(encryptedToken, HMACofAccessToken...)
 
 	//signing
@@ -273,8 +273,8 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 		//generating treeData
 		treeUUID, _ := uuid.FromBytes(userlib.RandomBytes(16))
 		filesCloud.TreeKeys = make(map[string][]byte)
-		filesCloud.TreeKeys["AES-CFB"] = userlib.Argon2Key(append([]byte(filename + "tree"), userdata.Hashword...), userlib.RandomBytes(16), 16)
-		filesCloud.TreeKeys["HMAC"] = userlib.Argon2Key(append([]byte(filename + "tree"), userdata.Hashword...), userlib.RandomBytes(16), 16)
+		filesCloud.TreeKeys["AES-CFB"] = userlib.Argon2Key(append([]byte(filename+"tree"), userdata.Hashword...), userlib.RandomBytes(16), 16)
+		filesCloud.TreeKeys["HMAC"] = userlib.Argon2Key(append([]byte(filename+"tree"), userdata.Hashword...), userlib.RandomBytes(16), 16)
 		filesCloud.UUIDofFileTree = treeUUID
 
 		//Creating and uploading tree struct
@@ -298,7 +298,7 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 		// recipientsMap := make(map[string]userlib.UUID)
 		// recipientsMap[recipient] = treeUUID
 		userdata.Ancestry[filename][recipient] = treeUUID
-		
+
 		//recipientsKeysMap := make(map[string]map[string][]byte)
 		recipientsKeysMapKeyHolder := make(map[string][]byte)
 		recipientsKeysMapKeyHolder["HMAC"] = filesCloud.TreeKeys["HMAC"]
@@ -322,8 +322,8 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 		if len(encryptedShareTree) <= 64 {
 			return nil, nil, errors.New("something wrong with length")
 		}
-		
-		encryptedTreeEnc := encryptedShareTree[:len(encryptedShareTree) - 64]
+
+		encryptedTreeEnc := encryptedShareTree[:len(encryptedShareTree)-64]
 
 		decryptedShareTreeSerialized := userlib.SymDec(treeEnc, encryptedTreeEnc)
 		decryptedShareTreeSerialized = depad(decryptedShareTreeSerialized)
@@ -341,12 +341,12 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 
 		mapForShareeKeys := make(map[string]map[string][]byte)
 		mapForShareeKeys[recipient] = keyHolderForSharee
-		
+
 		//encrypting and uploading filetree
 		serializedTree, _ := json.Marshal(ShareTree)
 		encryptedSerializedTree := userlib.SymEnc(treeEnc, userlib.RandomBytes(16), pad(serializedTree))
 		HMACencryptedSerializedTree := userlib.SymEnc(treeHMAC, userlib.RandomBytes(16), pad(encryptedSerializedTree))
-		userlib.DatastoreSet(treeUUID, append(encryptedSerializedTree,HMACencryptedSerializedTree...))
+		userlib.DatastoreSet(treeUUID, append(encryptedSerializedTree, HMACencryptedSerializedTree...))
 
 	}
 
@@ -416,6 +416,7 @@ func (userdata *User) updateKeys(filename string) (err error) {
 	userdata.FileNamesToUUID[filename] = cloudFinal.FileUUID
 	return
 }
+
 /*** USEFUL HELPER FUNCTIONS END ***/
 
 // InitUser will be called a single time to initialize a new user.
@@ -478,7 +479,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//Encrypting userdata
 	encryptedUserData := userlib.SymEnc(userdata.FileEncKey, userlib.RandomBytes(16), pad(serial))
-	
 
 	//HMAC-ing encrypted userdata
 	HMACofEncryptedUserData, _ := userlib.HMACEval(userdata.HMACKey, encryptedUserData)
@@ -556,7 +556,6 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return userdataptr, nil
 }
 
-
 // StoreFile is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/storefile.html
 func (userdata *User) StoreFile(filename string, data []byte) (err error) {
@@ -582,7 +581,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 		//Encrypting the file struct
 		var encrypted_data = userlib.SymEnc(userdata.FindKeys[filename]["AES-CFB"], userlib.RandomBytes(16), pad(jsonData))
 		var hmac_data, _ = userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encrypted_data)
-		userlib.DatastoreSet(storageKey, append(encrypted_data, hmac_data...)) 
+		userlib.DatastoreSet(storageKey, append(encrypted_data, hmac_data...))
 	} else {
 		//Generating UUID to store file
 		newUUIDSeed := userlib.Hash(userlib.RandomBytes(16))
@@ -621,7 +620,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 		userdata.makeCloud(filename, userdata.Username, userdata.Username)
 		//userdata.SharingDataAccess[filename][userdata.Username] = *UUIDofCloud
 	}
-	
+
 	return nil
 }
 
@@ -701,7 +700,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 	if !doIHaveThis {
 		return nil, errors.New("you don't have such a file dufus")
 	}
-	
+
 	userdata.updateKeys(filename)
 	_, doesDataStoreHaveThis := userlib.DatastoreGet(userdata.FileNamesToUUID[filename])
 	if !doesDataStoreHaveThis {
@@ -713,7 +712,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 
 	finalFile.Contents = append(finalFile.Contents, originalFile.Contents...)
 
-	for i := 1; i < finalFile.NumAppends + 1; i++ {
+	for i := 1; i < finalFile.NumAppends+1; i++ {
 		byteArrayToHoldInt := make([]byte, 1)
 		byteArrayToHoldInt[0] = byte(i)
 		UUIDSeed := userlib.Hash(append(userdata.FindKeys[filename]["AES-CFB"], byteArrayToHoldInt...))
@@ -748,8 +747,12 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 // https://cs161.org/assets/projects/2/docs/client_api/sharefile.html
 func (userdata *User) ShareFile(filename string, recipient string) (
 	accessToken uuid.UUID, err error) {
-
-	// instanciate a new file cloud and access token 
+	_, ok1 := userdata.FilesIOwn[filename]
+	_, ok2 := userdata.FileNamesToUUID[filename]
+	if !ok1 && !ok2 {
+		return uuid.New(), errors.New("File does not exist in namespace")
+	}
+	// instanciate a new file cloud and access token
 	_, UUIDofAccessToken, _ := userdata.makeCloud(filename, userdata.Username, recipient)
 	//userdata.SharingDataAccess[filename][recipient] = *UUIDofCloud
 
@@ -788,7 +791,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	if !kexist {
 		return errors.New("keystore key doesn't have value")
 	}
-	
+
 	//verifying sender
 	sigError := userlib.DSVerify(verifyKey, recievedFileData[:len(recievedFileData)-256], verifySignature)
 	if sigError != nil {
@@ -823,7 +826,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	//decrypting cloud structure
 	decryptedSerializedData := userlib.SymDec(cloudEnc, encryptedSerializedData[:len(encryptedSerializedData)-64])
 	decryptedSerializedData = depad(decryptedSerializedData)
-	//verifying hmac of cloud struct 
+	//verifying hmac of cloud struct
 	computedCloudHMAC, _ := userlib.HMACEval(cloudHMAC, encryptedSerializedData[:len(encryptedSerializedData)-64])
 	okcloud := userlib.HMACEqual(pulledHMACofCloud, computedCloudHMAC)
 	if !okcloud {
@@ -841,7 +844,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	myCloudKeysHolder["HMAC"] = cloudHMAC
 	myCloudKeysHolder["AES-CFB"] = cloudEnc
 	userdata.FilenamesToMyCloudKeys[filename] = myCloudKeysHolder
-	
+
 	//updating key-maps for recieving user
 	userdata.updateKeys(filename)
 
@@ -875,13 +878,12 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 	// mapForShareeKeys := make(map[string]map[string][]byte)
 	// mapForShareeKeys[userdata.Username] = keyHolderForSharee
-		
+
 	// 	//encrypting and uploading filetree
 	// serializedTree, _ := json.Marshal(ShareTree)
 	// encryptedSerializedTree := userlib.SymEnc(treeEnc, userlib.RandomBytes(16), pad(serializedTree))
 	// HMACencryptedSerializedTree := userlib.SymEnc(treeHMAC, userlib.RandomBytes(16), pad(encryptedSerializedTree))
 	// userlib.DatastoreSet(treeUUID, append(encryptedSerializedTree,HMACencryptedSerializedTree...))
-	
 
 	//take care of 126 bytes limit
 	return nil
@@ -901,7 +903,7 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 	}
 
 	//new UUID to store file in
-	newUUIDSeed := userlib.Hash(append([]byte(filename),userlib.RandomBytes(16)...))
+	newUUIDSeed := userlib.Hash(append([]byte(filename), userlib.RandomBytes(16)...))
 	newUUID, _ := uuid.FromBytes(newUUIDSeed[:16])
 
 	// //originalFileStruct
@@ -912,19 +914,19 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 	//re-encrypting original file and uploading to new UUID
 	newEncKey := userlib.Argon2Key(append(userlib.RandomBytes(16), userdata.Hashword...), userlib.RandomBytes(16), 16)
 	newHMACKey := userlib.Argon2Key(append(userlib.RandomBytes(16), userdata.Hashword...), userlib.RandomBytes(16), 16)
-	
+
 	// var encrypted_data = userlib.SymEnc(userdata.FindKeys[filename]["AES-CFB"], userlib.RandomBytes(16), pad(serializedOriginal))
 	// var hmac_data, _ = userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encrypted_data)
 	// userlib.DatastoreSet(newUUID, append(encrypted_data, hmac_data...))
 	userdata.FileReencryptor(filename, newUUID, newEncKey, newHMACKey)
 
-	//Updating my own stuff 
+	//Updating my own stuff
 	userdata.FindKeys[filename]["AES-CFB"] = newEncKey
 	userdata.FindKeys[filename]["HMAC"] = newHMACKey
 	userlib.DatastoreDelete(userdata.FilenamesToCloud[filename])
 	userlib.DatastoreDelete(userdata.FileNamesToUUID[filename])
 	userdata.FileNamesToUUID[filename] = newUUID
-	userdata.makeCloud(filename,userdata.Username, userdata.Username)
+	userdata.makeCloud(filename, userdata.Username, userdata.Username)
 
 	//communicating changes
 	for child := range userdata.Ancestry[filename] {
@@ -937,7 +939,7 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 			if len(encryptedChildsShareTree) <= 64 {
 				return errors.New("something wrong with length")
 			}
-			encryptedChildTreeEnc := encryptedChildsShareTree[:len(encryptedChildsShareTree) - 64]
+			encryptedChildTreeEnc := encryptedChildsShareTree[:len(encryptedChildsShareTree)-64]
 
 			decryptedChildsShareTreeSerialized := userlib.SymDec(childsShareTreeKeys["AES-CFB"], encryptedChildTreeEnc)
 			decryptedChildsShareTreeSerialized = depad(decryptedChildsShareTreeSerialized)
@@ -963,12 +965,12 @@ func (userdata *User) FileReencryptor(filename string, newUUID uuid.UUID, newEnc
 	var pulledOriginal File
 	pulledOriginal.Contents, pulledOriginal.NumAppends, _ = userdata.PullFile(filename)
 	serializedOriginal, _ := json.Marshal(pulledOriginal)
-	
+
 	var encrypted_data = userlib.SymEnc(newEnc, userlib.RandomBytes(16), pad(serializedOriginal))
 	var hmac_data, _ = userlib.HMACEval(newHMAC, encrypted_data)
 	userlib.DatastoreSet(newUUID, append(encrypted_data, hmac_data...))
 
-	for i := 1; i < pulledOriginal.NumAppends + 1; i++ {
+	for i := 1; i < pulledOriginal.NumAppends+1; i++ {
 		byteArrayToHoldInt := make([]byte, 1)
 		byteArrayToHoldInt[0] = byte(i)
 
@@ -1006,9 +1008,9 @@ func (userdata *User) FileReencryptor(filename string, newUUID uuid.UUID, newEnc
 	return nil
 }
 
-func (userdata *User) RevokeHelper(childorigin string, child string, filename string, 
-	newUUID *uuid.UUID, newHMAC []byte, newEnc []byte, 
-	ancestorCloudUUID *uuid.UUID, ancestorEncKey []byte, ancestorHMACKey []byte) (err error){
+func (userdata *User) RevokeHelper(childorigin string, child string, filename string,
+	newUUID *uuid.UUID, newHMAC []byte, newEnc []byte,
+	ancestorCloudUUID *uuid.UUID, ancestorEncKey []byte, ancestorHMACKey []byte) (err error) {
 	//base case
 	//creating new cloud
 	var FileShareMetaNew FileShareMeta
@@ -1024,7 +1026,7 @@ func (userdata *User) RevokeHelper(childorigin string, child string, filename st
 	FileShareMetaNew.TreeKeys = newTreeKeys
 	//serializing new cloud
 	serializedCloud, _ := json.Marshal(FileShareMetaNew)
-	
+
 	//getting ancestor's cloud keys
 	serializedCloudEncrypted := userlib.SymEnc(ancestorEncKey, userlib.RandomBytes(16), pad(serializedCloud))
 	//HMACing ancestor's cloud

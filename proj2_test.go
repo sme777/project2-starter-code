@@ -95,6 +95,37 @@ func TestGet(t *testing.T) {
 	}
 }
 
+func TestGet2(t *testing.T) {
+	clear()
+	t.Log("Initialization test")
+
+	// You can set this to false!
+	userlib.SetDebugStatus(true)
+
+	u, err := InitUser("bob", "urchi")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	// t.Log() only produces output if you run with "go test -v"
+	t.Log("Got user", u)
+	// If you want to comment the line above,
+	// write _ = u here to make the compiler happy
+	// You probably want many more tests here.
+	_, err2 := GetUser("bob", "urchik")
+	if err2 == nil {
+		t.Error("Failed to get user", err)
+		return
+	}
+
+	_, err3 := GetUser("alice", "putanka")
+	if err3 == nil {
+		t.Error("Failed to get user", err)
+		return
+	}
+}
+
 func TestStorage(t *testing.T) {
 	clear()
 	u, err := InitUser("alice", "fubar")
@@ -117,6 +148,31 @@ func TestStorage(t *testing.T) {
 	}
 }
 
+func TestStorage2(t *testing.T) {
+	clear()
+	u, err := InitUser("alice", "gyot")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	v := []byte("Cereteli Alyoshka")
+	u.StoreFile("file1", v)
+
+	v_new := []byte("Teci Rubosh")
+	u.StoreFile("file1", v_new)
+
+	v_final, err2 := u.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+	if reflect.DeepEqual(v, v_final) {
+		t.Error("Downloaded file is the same", v, v_final)
+		return
+	}
+}
+
 func TestInvalidFile(t *testing.T) {
 	clear()
 	u, err := InitUser("alice", "fubar")
@@ -132,7 +188,7 @@ func TestInvalidFile(t *testing.T) {
 	}
 }
 
-func TestShare(t *testing.T) {
+func TestShare0(t *testing.T) {
 	clear()
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
@@ -179,6 +235,55 @@ func TestShare(t *testing.T) {
 	}
 }
 
+func TestShare1(t *testing.T) {
+	clear()
+	t.Log("Testing sharing file that I don't own")
+
+	user1, _ := InitUser("sasunci mkrtich", "sasun")
+	_, _ = InitUser("gandonchik", "plan")
+	_, err := user1.ShareFile("file1", "gandonchik")
+	if err == nil {
+		t.Error("Cannot share file that I don't own", err)
+		return
+	}
+}
+
+func TestShare2(t *testing.T) {
+	clear()
+	t.Log("Sharing a file shared with me")
+	user1, _ := InitUser("sasunci mkrtich", "sasun")
+	user2, _ := InitUser("hachnci gvenik", "plan")
+	user3, _ := InitUser("Yonjlaqci bluetotik", "siktir")
+
+	v := []byte("Cereteli Alyoshka")
+	user1.StoreFile("file1", v)
+
+	token, err := user1.ShareFile("file1", "hachnci gvenik")
+	if err != nil {
+		t.Error("Cannot share file that I own", err)
+		return
+	}
+
+	err2 := user2.ReceiveFile("file1", "sasunci mkrtich", token)
+	if err2 != nil {
+		t.Error("Cannot receive file with valid access token", err)
+		return
+	}
+
+	token2, err3 := user2.ShareFile("file1", "Yonjlaqci bluetotik")
+	if err3 != nil {
+		t.Error("Cannot share file that I have access to", err)
+		return
+	}
+
+	err4 := user3.ReceiveFile("file1", "hachnci gvenik", token2)
+	if err4 != nil {
+		t.Error("Cannot receive file with valid access token", err)
+		return
+	}
+
+}
+
 func TestAppend0(t *testing.T) {
 	clear()
 
@@ -210,6 +315,52 @@ func TestAppend0(t *testing.T) {
 
 	if !reflect.DeepEqual(v1, v2) {
 		t.Error("Appended file is not the same", v1, v2)
+		return
+	}
+}
+
+func TestLoad0(t *testing.T) {
+	clear()
+	t.Log("Testing loading user owned files")
+	//initialize user
+	user1, _ := InitUser("mxo", "urod")
+	file1 := []byte("matroyshka")
+	user1.StoreFile("klor", file1)
+	loadFile1, err := user1.LoadFile("klor")
+	if err != nil {
+		t.Error("failed download")
+		return
+	}
+	if !reflect.DeepEqual(loadFile1, file1) {
+		t.Error("file is diffrent")
+		return
+	}
+}
+
+func TestLoad1(t *testing.T) {
+	clear()
+	t.Log("Testing loading not user owned files")
+	//initialize user
+	user1, _ := InitUser("mxo", "urod")
+	user2, _ := InitUser("samo", "simpo")
+	file1 := []byte("matroyshka")
+	file2 := []byte("inch xeris matroyshka ara")
+	user1.StoreFile("klor", file1)
+	user2.StoreFile("qarakusi", file2)
+
+	_, err := user1.LoadFile("qarakusi")
+	if err == nil {
+		t.Error("should not have access to this file")
+		return
+	}
+
+	loadFile2, err := user2.LoadFile("qarakusi")
+	if err != nil {
+		t.Error("should not have access to this file")
+		return
+	}
+	if !reflect.DeepEqual(file2, loadFile2) {
+		t.Error("file is diffrent")
 		return
 	}
 }
@@ -274,5 +425,26 @@ func TestRevoke0(t *testing.T) {
 	if !reflect.DeepEqual(creatorLoad2, creatorsVersion) {
 		t.Error("Appended file is not the same", creatorLoad2, creatorsVersion)
 		return
+	}
+}
+
+func TestRevoke1(t *testing.T) {
+	clear()
+	// make user
+	user1, _ := InitUser("mxo", "rambo")
+	user2, _ := InitUser("samo", "rock")
+	user3, _ := InitUser("arik", "krakadil")
+
+	user1.StoreFile("file1", []byte("rambo qacov tvec arikusi dzverin"))
+
+	accessToken1, _ := user1.ShareFile("file1", "samo")
+	_ = user2.ReceiveFile("file1", "mxo", accessToken1)
+
+	accessToken2, _ := user2.ShareFile("file1", "arik")
+	_ = user3.ReceiveFile("file1", "mxo", accessToken2)
+
+	err := user2.RevokeFile("file1", "arik")
+	if err == nil {
+		t.Error("Can't share when you don't own")
 	}
 }
