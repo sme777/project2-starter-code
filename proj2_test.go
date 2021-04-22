@@ -426,6 +426,32 @@ func TestLoad0(t *testing.T) {
 	}
 }
 
+func TestRecieve0(t *testing.T) {
+	clear()
+	t.Log("Testing recieving for non existant user")
+	user1, _ := InitUser("charles", "king")
+	err := user1.ReceiveFile("sexy pics", "elizabeth", uuid.New())
+	if err == nil {
+		t.Error("Should not recieve non existant files. Awrr, where are my pics!")
+	}
+}
+
+func TestRecieve1(t *testing.T) {
+	clear()
+	t.Log("Testing recieving right after revoking")
+	user1, _ := InitUser("phillip", "king")
+	user2, _ := InitUser("elizabeth", "queen")
+	sexy_pics := []byte("heeree are some pictures of me darling [file size = 1.5GB]")
+	user2.StoreFile("my sexy pics", sexy_pics)
+	token, _ := user2.ShareFile("my sexy pics", "phillip")
+	// oh no, i sent it to the wrong king!
+	user2.RevokeFile("my sexy pics", "phillip")
+	err := user1.ReceiveFile("my sexy pics", "elizabeth", token)
+	if err == nil {
+		t.Error("Should not recieve revoked files!")
+	}
+}
+
 func TestLoad1(t *testing.T) {
 	clear()
 	t.Log("Testing loading not user owned files")
@@ -584,5 +610,138 @@ func TestRevoke4(t *testing.T) {
 	err := user2.RevokeFile("file1", "arikus")
 	if err == nil {
 		t.Error("Can't revoke access if not the owner")
+	}
+}
+
+func TestMix0(t *testing.T) {
+	user1, _ := InitUser("michael", "klor")
+	user2, _ := InitUser("samson", "qarakusi")
+
+	v1 := []byte("goodies")
+	//v2 := []byte("not goodies")
+
+	user1.StoreFile("file1", v1)
+	user2.StoreFile("file1", v1)
+
+	v2 := []byte("more goodies")
+	_ = user1.AppendFile("file1", v2)
+
+	file2, err := user2.LoadFile("file1")
+	if err != nil {
+		t.Error("Something went wrong")
+	}
+	// make sure v1 is not changed for user2
+	if !reflect.DeepEqual(file2, v1) {
+		t.Error("File has been illegaly changed")
+	}
+
+	v3 := []byte("out of goodies")
+	_ = user2.AppendFile("file1", v3)
+
+	file1, err2 := user1.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Something went wrong")
+	}
+
+	//make sure new file is v1+v2 and does not include v3
+	if !reflect.DeepEqual(file1, append(v1, v2...)) {
+		t.Error("File has been illegaly changed")
+	}
+
+}
+
+func TestMix1(t *testing.T) {
+	clear()
+
+	_, _ = InitUser("mxo", "klor")
+
+	mxo1, err := GetUser("mxo", "klor")
+	if err != nil {
+		t.Error("Should get User Mxo back", err)
+		return
+	}
+	mxo2, err1 := GetUser("mxo", "klor")
+	if err1 != nil {
+		t.Error("Should get User Mxo back", err)
+		return
+	}
+
+	//file1 := "gulyaem v golivude"
+	v := []byte("wa wa wi wa")
+
+	mxo1.StoreFile("file1", v)
+	mxo_load, _ := mxo2.LoadFile("file1")
+
+	if !reflect.DeepEqual(v, mxo_load) {
+		t.Error("Should store different instances")
+		return
+	}
+
+	v2 := []byte("going to Las Vegas")
+	err2 := mxo1.AppendFile("file1", v2)
+	if err2 != nil {
+		t.Error("Failed to append file", err)
+		return
+	}
+
+	mxo_load, err = mxo2.LoadFile("file1")
+	if !reflect.DeepEqual(append(v, v2...), mxo_load) {
+		t.Error("Should store different instances")
+		return
+	}
+
+	if err != nil {
+		t.Error("Should store different instances")
+		return
+	}
+
+	user3, _ := InitUser("arikus", "apelsin")
+
+	user3.StoreFile("file1", []byte("time to go to Birmingham"))
+	magic_string, _ := user3.ShareFile("file1", "mxo")
+
+	_ = mxo1.ReceiveFile("alice_file", "chris", magic_string)
+
+	mxo_load2, err3 := mxo2.LoadFile("file1")
+	if !reflect.DeepEqual(mxo_load2, []byte("test content")) {
+		t.Error("Should be able to load and store with different instances")
+		return
+	}
+	if err3 != nil {
+		t.Error("Should be able to load and store with different instances")
+		return
+	}
+
+}
+
+func TestSameFilename(t *testing.T) {
+	clear()
+	// Create Alice and Bob
+	u, _ := InitUser("alice", "fubar")
+	u2, _ := InitUser("bob", "fubar")
+
+	// Both create File f w/ same content
+	data := []byte("content")
+	u.StoreFile("f", data)
+	u2.StoreFile("f", data)
+
+	// Alice appends to File
+	newdata := []byte("new content")
+	_ = u.AppendFile("f", newdata)
+
+	// Ensure that Bob's file wasn't affected
+	dataload, err := u2.LoadFile("f")
+	if !reflect.DeepEqual(dataload, data) || err != nil {
+		t.Error("Couldn't handle same filename", err)
+	}
+
+	// Alice stores new file
+	newdata = []byte("brand new content")
+	u.StoreFile("f", newdata)
+
+	// Ensure that Bob's file wasn't affected
+	dataload, err = u2.LoadFile("f")
+	if !reflect.DeepEqual(dataload, data) || err != nil {
+		t.Error("Couldn't handle same filename", err)
 	}
 }
