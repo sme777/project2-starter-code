@@ -105,8 +105,11 @@ type User struct {
 	TreesIUpdateKeys map[string]map[string][]byte
 
 	//storing signature keys
-	privateSign userlib.DSSignKey
-	publicSign  userlib.DSVerifyKey
+	PrivateSign userlib.DSSignKey
+	PublicSign  userlib.DSVerifyKey
+
+	//storing user's password
+	rawpassword string
 
 	//FileNumAppends       map[string]int
 	//SignitureKeys		 map[string]userlib.DSSignKey
@@ -172,6 +175,21 @@ func depad(paddedmsg []byte) []byte {
 
 //This pulls and returns the file struct for a file from Datastore, given a filename
 //Errors if no such file exists in filespace
+func (userdata *User) updateUser() error {
+	//Serializing our user struct
+	serial, _ := json.Marshal(userdata)
+
+	//Encrypting userdata
+	encryptedUserData := userlib.SymEnc(userdata.FileEncKey, userlib.RandomBytes(16), pad(serial))
+
+	//HMAC-ing encrypted userdata
+	HMACofEncryptedUserData, _ := userlib.HMACEval(userdata.HMACKey, encryptedUserData)
+
+	//Storing in DataStore
+	userlib.DatastoreSet(userdata.DataStoreUUID, append(encryptedUserData, HMACofEncryptedUserData...))
+	return nil
+}
+
 func (userdata *User) PullFile(filename string) (contents []byte, numApp int, err error) {
 	userdata.updateKeys(filename)
 	storageKey, filenameExists := userdata.FileNamesToUUID[filename]
@@ -248,7 +266,7 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 	encryptedHMACdAccessToken := append(encryptedToken, HMACofAccessToken...)
 
 	//signing
-	signature, _ := userlib.DSSign(userdata.privateSign, encryptedHMACdAccessToken)
+	signature, _ := userlib.DSSign(userdata.PrivateSign, encryptedHMACdAccessToken)
 	//appending signature to HMACed encryption of access token
 	signedEnctyptedHMACAccessToken := append(encryptedHMACdAccessToken, signature...)
 	//generating access token UUID
@@ -467,12 +485,12 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	//generating signature
 	//Storing public Sign key in Keystore
 	privSign, pubSign, _ := userlib.DSKeyGen()
-	userdata.privateSign = privSign
-	userdata.publicSign = pubSign
+	userdata.PrivateSign = privSign
+	userdata.PublicSign = pubSign
 
 	//Storing public sign key key in Keystore
 	signname := string(userlib.Hash([]byte("signature"))) + string(userlib.Hash([]byte(username)))
-	userlib.KeystoreSet(signname, userdata.publicSign)
+	userlib.KeystoreSet(signname, userdata.PublicSign)
 
 	//Serializing our user struct
 	serial, _ := json.Marshal(userdata)
@@ -488,6 +506,8 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//Storing user in Keystore
 	userlib.KeystoreSet(username, userdata.PublicRSAKey)
+
+	userdata.rawpassword = password
 
 	//Return error for non-unique username
 	return &userdata, nil
@@ -564,6 +584,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	//NEED to store # of append files (links)
 	//NEED to overwrite the file
 	//Generating File struct to store the contents of the file
+	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	var FileData File
 	FileData.NumAppends = 0
 	FileData.Contents = data
@@ -621,6 +642,8 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 		//userdata.SharingDataAccess[filename][userdata.Username] = *UUIDofCloud
 	}
 
+	userdata.updateUser()
+
 	return nil
 }
 
@@ -629,6 +652,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//TODO: Write file verify helper function
 	//TODO: DONT NEED TO GENERATE ORIGINAL UUID, CAN JUST PULL FROM FILENAME -> UUID MAP IN USER STRUCT
+	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	_, supposedExist := userdata.FileNamesToUUID[filename]
 	if !supposedExist {
 		return errors.New("file doesn't exist in your namespace, dummy")
@@ -672,6 +696,8 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//uploading appendage to datastore
 	userlib.DatastoreSet(UUIDToStoreAppend, append(encrypted_appendage, hmac_appendage...))
 
+	userdata.updateUser()
+
 	return
 }
 
@@ -689,6 +715,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 	// json.Unmarshal(dataJSON, &dataBytes)
 	// return dataBytes, nil
 	//End of toy implementation
+	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 
 	//defining finalfile
 	var finalFile File
@@ -740,6 +767,8 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 		finalFile.Contents = append(finalFile.Contents, filedataTestAppendage.Contents...)
 	}
 
+	userdata.updateUser()
+
 	return finalFile.Contents, nil
 }
 
@@ -747,14 +776,20 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 // https://cs161.org/assets/projects/2/docs/client_api/sharefile.html
 func (userdata *User) ShareFile(filename string, recipient string) (
 	accessToken uuid.UUID, err error) {
-	_, ok1 := userdata.FilesIOwn[filename]
+	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
+	_, ok1 := userlib.KeystoreGet(recipient)
 	_, ok2 := userdata.FileNamesToUUID[filename]
 	if !ok1 && !ok2 {
 		return uuid.New(), errors.New("File does not exist in namespace")
 	}
 	// instanciate a new file cloud and access token
 	_, UUIDofAccessToken, _ := userdata.makeCloud(filename, userdata.Username, recipient)
+	if UUIDofAccessToken == nil {
+		return uuid.New(), errors.New("File does not exist in namespace")
+	}
 	//userdata.SharingDataAccess[filename][recipient] = *UUIDofCloud
+
+	userdata.updateUser()
 
 	return *UUIDofAccessToken, nil
 }
@@ -764,6 +799,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 func (userdata *User) ReceiveFile(filename string, sender string,
 	accessToken uuid.UUID) (err error) {
 	//verifying that the file does not exist
+	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	_, doIHaveThis := userdata.FileNamesToUUID[filename]
 
 	if doIHaveThis {
@@ -886,12 +922,15 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	// userlib.DatastoreSet(treeUUID, append(encryptedSerializedTree,HMACencryptedSerializedTree...))
 
 	//take care of 126 bytes limit
+
+	userdata.updateUser()
 	return nil
 }
 
 // RevokeFile is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/revokefile.html
 func (userdata *User) RevokeFile(filename string, targetUsername string) (err error) {
+	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	userdata.updateKeys(filename)
 	_, fileInMySpace := userdata.FileNamesToUUID[filename]
 	if !fileInMySpace {
@@ -956,6 +995,8 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 			}
 		}
 	}
+
+	userdata.updateUser()
 	return
 }
 

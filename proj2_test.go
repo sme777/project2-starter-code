@@ -714,34 +714,3 @@ func TestMix1(t *testing.T) {
 
 }
 
-func TestSameFilename(t *testing.T) {
-	clear()
-	// Create Alice and Bob
-	u, _ := InitUser("alice", "fubar")
-	u2, _ := InitUser("bob", "fubar")
-
-	// Both create File f w/ same content
-	data := []byte("content")
-	u.StoreFile("f", data)
-	u2.StoreFile("f", data)
-
-	// Alice appends to File
-	newdata := []byte("new content")
-	_ = u.AppendFile("f", newdata)
-
-	// Ensure that Bob's file wasn't affected
-	dataload, err := u2.LoadFile("f")
-	if !reflect.DeepEqual(dataload, data) || err != nil {
-		t.Error("Couldn't handle same filename", err)
-	}
-
-	// Alice stores new file
-	newdata = []byte("brand new content")
-	u.StoreFile("f", newdata)
-
-	// Ensure that Bob's file wasn't affected
-	dataload, err = u2.LoadFile("f")
-	if !reflect.DeepEqual(dataload, data) || err != nil {
-		t.Error("Couldn't handle same filename", err)
-	}
-}
