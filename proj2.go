@@ -185,6 +185,10 @@ func (userdata *User) PullFile(filename string) (contents []byte, numApp int, er
 		return nil, 0, errors.New("no such file exists in Datastore")
 	}
 
+	if len(supposedFile) <= 64 {
+		return nil, 0, errors.New("something wrong with length")
+	}
+
 	pulledHMAC := supposedFile[len(supposedFile) - 64:]
 	encryptedFileData := supposedFile[:len(supposedFile) - 64]
 
@@ -315,6 +319,10 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 		//getting tree I'm supposed to update
 		encryptedShareTree, _ := userlib.DatastoreGet(treeUUID)
 		//encryptedTreeHMAC := encryptedShareTree[len(encryptedShareTree) - 64:]
+		if len(encryptedShareTree) <= 64 {
+			return nil, nil, errors.New("something wrong with length")
+		}
+		
 		encryptedTreeEnc := encryptedShareTree[:len(encryptedShareTree) - 64]
 
 		decryptedShareTreeSerialized := userlib.SymDec(treeEnc, encryptedTreeEnc)
@@ -381,6 +389,9 @@ func (userdata *User) updateKeys(filename string) (err error) {
 	//Pulling most recent keys
 	UUIDofCloud := userdata.FilenamesToCloud[filename]
 	FileCloudData, _ := userlib.DatastoreGet(UUIDofCloud)
+	if len(FileCloudData) <= 64 {
+		return errors.New("something wrong with length")
+	}
 	cloudDataToDecrypt := FileCloudData[:len(FileCloudData)-64]
 	pulledCloudHMAC := FileCloudData[len(FileCloudData)-64:]
 
@@ -510,6 +521,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 	//Retrieving HMAC from data pulled from DataStore
 	lengthEncData := len(encryptedRetrievedData)
+	if lengthEncData <= 64 {
+		return nil, errors.New("something wrong with length")
+	}
 	retrievedHMAC := encryptedRetrievedData[lengthEncData-64:]
 
 	//Retrieving and decrypting user struct data from DataStore
@@ -706,6 +720,9 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 		appendageUUID, _ := uuid.FromBytes(UUIDSeed[:16])
 
 		encryptedData, _ := userlib.DatastoreGet(appendageUUID)
+		if len(encryptedData) <= 64 {
+			return nil, errors.New("something wrong with length")
+		}
 		HMACencryptedPulledFileData := encryptedData[len(encryptedData)-64:]
 
 		//Pulling keys for file decryption
@@ -752,6 +769,9 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 	//pulling the file
 	recievedFileData, ok := userlib.DatastoreGet(accessToken)
+	if len(recievedFileData) <= 64 {
+		return errors.New("somethings up with length")
+	}
 
 	if !ok {
 		return errors.New("share does not exist or has been revoked")
@@ -795,6 +815,9 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 	//Accessing cloud data
 	encryptedSerializedData, _ := userlib.DatastoreGet(cloudUUID)
+	if len(encryptedSerializedData) <= 64 {
+		return errors.New("something wrong with length")
+	}
 	//verifying HMAC of cloud
 	pulledHMACofCloud := encryptedSerializedData[len(encryptedSerializedData)-64:]
 	//decrypting cloud structure
@@ -894,7 +917,7 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 	// var hmac_data, _ = userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encrypted_data)
 	// userlib.DatastoreSet(newUUID, append(encrypted_data, hmac_data...))
 	userdata.FileReencryptor(filename, newUUID, newEncKey, newHMACKey)
-	
+
 	//Updating my own stuff 
 	userdata.FindKeys[filename]["AES-CFB"] = newEncKey
 	userdata.FindKeys[filename]["HMAC"] = newHMACKey
@@ -911,6 +934,9 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 			childsShareTreeKeys := userdata.AncestryKeys[filename][child]
 			encryptedChildsShareTree, _ := userlib.DatastoreGet(childsShareTreeUUID)
 			//encryptedChildTreeHMAC := encryptedChildsShareTree[len(encryptedChildsShareTree) - 64:]
+			if len(encryptedChildsShareTree) <= 64 {
+				return errors.New("something wrong with length")
+			}
 			encryptedChildTreeEnc := encryptedChildsShareTree[:len(encryptedChildsShareTree) - 64]
 
 			decryptedChildsShareTreeSerialized := userlib.SymDec(childsShareTreeKeys["AES-CFB"], encryptedChildTreeEnc)
@@ -950,6 +976,9 @@ func (userdata *User) FileReencryptor(filename string, newUUID uuid.UUID, newEnc
 		appendageUUID, _ := uuid.FromBytes(UUIDSeed[:16])
 
 		encryptedData, _ := userlib.DatastoreGet(appendageUUID)
+		if len(encryptedData) <= 64 {
+			return errors.New("somethings wrong idk lol")
+		}
 		HMACencryptedPulledFileData := encryptedData[len(encryptedData)-64:]
 
 		//Pulling keys for file decryption
