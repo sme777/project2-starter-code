@@ -44,6 +44,29 @@ func TestInit(t *testing.T) {
 	// You probably want many more tests here.
 }
 
+func TestInit2(t *testing.T) {
+	clear()
+	t.Log("Testing User with Repeated Name")
+
+	userlib.SetDebugStatus(true)
+
+	u, err := InitUser("bob", "bobbydean")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "deanbobby")
+	if err2 == nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	// t.Log() only produces output if you run with "go test -v"
+	t.Log("Got user", u)
+	t.Log("Didn't get user", u2)
+}
+
 func TestGet(t *testing.T) {
 	clear()
 	t.Log("Initialization test")
@@ -163,7 +186,6 @@ func TestAppend0(t *testing.T) {
 	file1dataAppend1 := []byte(" here is more yeet")
 	file1dataAppend2 := []byte(" and even more!!")
 
-	
 	u, err := InitUser("nick", "weaver")
 	if err != nil {
 		t.Error("Failed to initialize user", err)
@@ -235,12 +257,10 @@ func TestRevoke0(t *testing.T) {
 		return
 	}
 
-
 	if !reflect.DeepEqual(v1, creatorsVersion) {
 		t.Error("Appended file is not the same", v1, creatorsVersion)
 		return
 	}
-
 
 	// - /* revoked user trying to append to file */
 	// revokedAppendErr := revoked.AppendFile("file2", rogueAppend)
@@ -256,6 +276,3 @@ func TestRevoke0(t *testing.T) {
 		return
 	}
 }
-
-
-
