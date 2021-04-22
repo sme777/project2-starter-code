@@ -281,8 +281,22 @@ func TestShare2(t *testing.T) {
 		t.Error("Cannot receive file with valid access token", err)
 		return
 	}
-
 }
+
+// func TestShare3(t *testing.T) {
+// 	//errors
+// 	clear()
+// 	t.Log("Sharing a file with invalid user")
+// 	user1, _ := InitUser("heros andranik", "sasun")
+// 	v := []byte("Cereteli Kara")
+// 	user1.StoreFile("file1", v)
+// 	_, err := user1.ShareFile("file1", "hachnci gvenik")
+
+// 	if err == nil {
+// 		t.Error("Trying to share a file with unknown user", err)
+// 		return
+// 	}
+// }
 
 func TestAppend0(t *testing.T) {
 	clear()
@@ -317,6 +331,81 @@ func TestAppend0(t *testing.T) {
 		t.Error("Appended file is not the same", v1, v2)
 		return
 	}
+}
+
+func TestAppend1(t *testing.T) {
+	clear()
+	t.Log("Trying to append for non existent file")
+	user1, _ := InitUser("sasunci mkrtich", "sasun")
+	err := user1.AppendFile("ccashat", []byte("inchqan mec enqanlav"))
+	if err == nil {
+		t.Error("Appended file that does not exist")
+		return
+	}
+}
+
+func TestAppend2(t *testing.T) {
+	clear()
+	t.Log("Trying to append to file with no access")
+	user1, _ := InitUser("sasunci mkrtich", "sasun")
+	user2, _ := InitUser("bob", "marley")
+
+	file1 := []byte("some cool stuff")
+	user1.StoreFile("file1", file1)
+	access, err := user1.ShareFile("file1", "bob")
+
+	if err != nil {
+		t.Error("Sharing should work for user with file")
+		return
+	}
+
+	user2.ReceiveFile("file1", "sasunci mkrtich", access)
+	err2 := user2.AppendFile("file1", []byte("more cool stuff"))
+
+	//err := user1.AppendFile("ccashat", []byte("inchqan mec enqanlav"))
+	if err2 != nil {
+		t.Error("Appended file should work for user with access token")
+		return
+	}
+}
+
+func TestAppend3(t *testing.T) {
+	clear()
+	t.Log("Trying to append to file with no access")
+	user1, _ := InitUser("sasunci mkrtich", "sasun")
+	user2, _ := InitUser("bob", "marley")
+
+	file1 := []byte("some cool stuff")
+	user1.StoreFile("file1", file1)
+	access, err := user1.ShareFile("file1", "bob")
+
+	if err != nil {
+		t.Error("Sharing should work for user with file")
+		return
+	}
+
+	user2.ReceiveFile("file1", "sasunci mkrtich", access)
+	err2 := user2.AppendFile("file1", []byte("more cool stuff"))
+
+	//err := user1.AppendFile("ccashat", []byte("inchqan mec enqanlav"))
+	if err2 != nil {
+		t.Error("Appended file should work for user with access token")
+		return
+	}
+
+	err3 := user1.RevokeFile("file1", "bob")
+
+	if err3 != nil {
+		t.Error("Revoking should work for existing user")
+		return
+	}
+
+	err4 := user2.AppendFile("file1", []byte("evenn more cool stuff"))
+	if err4 == nil {
+		t.Error("Appended file should not work for user with invalid access token")
+		return
+	}
+
 }
 
 func TestLoad0(t *testing.T) {
@@ -446,5 +535,54 @@ func TestRevoke1(t *testing.T) {
 	err := user2.RevokeFile("file1", "arik")
 	if err == nil {
 		t.Error("Can't share when you don't own")
+	}
+}
+
+func TestRevoke2(t *testing.T) {
+	clear()
+	user1, _ := InitUser("mxo", "rambo")
+	_, _ = InitUser("samo", "rocky")
+	_, shareError := user1.ShareFile("xinkali", "samo")
+	if shareError == nil {
+		t.Error("File does not exist")
+		return
+	}
+}
+
+func TestRevoke3(t *testing.T) {
+	clear()
+	user1, _ := InitUser("mxo", "1")
+	user2, _ := InitUser("samo", "2")
+	user3, _ := InitUser("arikus", "3")
+	user1.StoreFile("file1", []byte("nice"))
+
+	token1, _ := user1.ShareFile("file1", "samo")
+	_ = user2.ReceiveFile("file2", "mxo", token1)
+
+	token2, _ := user2.ShareFile("file2", "arikus")
+	_ = user3.ReceiveFile("file3", "samo", token2)
+
+	err := user1.RevokeFile("file1", "arikus")
+	if err == nil {
+		t.Error("Can't revoke access from indirect children")
+	}
+}
+
+func TestRevoke4(t *testing.T) {
+	clear()
+	user1, _ := InitUser("mxo", "1")
+	user2, _ := InitUser("samo", "2")
+	user3, _ := InitUser("arikus", "3")
+	user1.StoreFile("file1", []byte("nice"))
+
+	token1, _ := user1.ShareFile("file1", "samo")
+	_ = user2.ReceiveFile("file2", "mxo", token1)
+
+	token2, _ := user2.ShareFile("file2", "arikus")
+	_ = user3.ReceiveFile("file3", "samo", token2)
+
+	err := user2.RevokeFile("file1", "arikus")
+	if err == nil {
+		t.Error("Can't revoke access if not the owner")
 	}
 }
