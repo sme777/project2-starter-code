@@ -571,7 +571,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		return nil, errors.New("integrity could not be verified")
 	}
 
-	userdata = userdataTest
+	//userdata = userdataTest
 
 	return userdataptr, nil
 }
@@ -582,9 +582,9 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	//NEED to generate hmac and encryption keys
 	//NEED to store owner of file
 	//NEED to store # of append files (links)
-	//NEED to overwrite the file
+	//NEED to overwrite the file&
 	//Generating File struct to store the contents of the file
-	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
+	//userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	var FileData File
 	FileData.NumAppends = 0
 	FileData.Contents = data
@@ -642,7 +642,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 		//userdata.SharingDataAccess[filename][userdata.Username] = *UUIDofCloud
 	}
 
-	userdata.updateUser()
+	//userdata.updateUser()
 
 	return nil
 }
@@ -652,7 +652,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//TODO: Write file verify helper function
 	//TODO: DONT NEED TO GENERATE ORIGINAL UUID, CAN JUST PULL FROM FILENAME -> UUID MAP IN USER STRUCT
-	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
+	//userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	_, supposedExist := userdata.FileNamesToUUID[filename]
 	if !supposedExist {
 		return errors.New("file doesn't exist in your namespace, dummy")
@@ -696,7 +696,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//uploading appendage to datastore
 	userlib.DatastoreSet(UUIDToStoreAppend, append(encrypted_appendage, hmac_appendage...))
 
-	userdata.updateUser()
+	//userdata.updateUser()
 
 	return
 }
@@ -715,7 +715,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 	// json.Unmarshal(dataJSON, &dataBytes)
 	// return dataBytes, nil
 	//End of toy implementation
-	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
+	//userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 
 	//defining finalfile
 	var finalFile File
@@ -767,7 +767,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 		finalFile.Contents = append(finalFile.Contents, filedataTestAppendage.Contents...)
 	}
 
-	userdata.updateUser()
+	//userdata.updateUser()
 
 	return finalFile.Contents, nil
 }
@@ -776,7 +776,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 // https://cs161.org/assets/projects/2/docs/client_api/sharefile.html
 func (userdata *User) ShareFile(filename string, recipient string) (
 	accessToken uuid.UUID, err error) {
-	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
+	//userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	_, ok1 := userlib.KeystoreGet(recipient)
 	_, ok2 := userdata.FileNamesToUUID[filename]
 	if !ok1 && !ok2 {
@@ -789,7 +789,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	}
 	//userdata.SharingDataAccess[filename][recipient] = *UUIDofCloud
 
-	userdata.updateUser()
+	//userdata.updateUser()
 
 	return *UUIDofAccessToken, nil
 }
@@ -799,7 +799,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 func (userdata *User) ReceiveFile(filename string, sender string,
 	accessToken uuid.UUID) (err error) {
 	//verifying that the file does not exist
-	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
+	//userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	_, doIHaveThis := userdata.FileNamesToUUID[filename]
 
 	if doIHaveThis {
@@ -888,49 +888,14 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	userdata.TreesIUpdateLoc[filename] = recieveFileShareMeta.UUIDofFileTree
 	userdata.TreesIUpdateKeys[filename] = recieveFileShareMeta.Keys
 
-	// //Updating tree that I received file
-
-	// treeUUID := userdata.TreesIUpdateLoc[filename]
-	// treeEnc := userdata.TreesIUpdateKeys[filename]["AES-CFB"]
-	// treeHMAC := userdata.TreesIUpdateKeys[filename]["HMAC"]
-	// 	//getting tree I'm supposed to update
-	// encryptedShareTree, _ := userlib.DatastoreGet(treeUUID)
-	// 	//encryptedTreeHMAC := encryptedShareTree[len(encryptedShareTree) - 64:]
-	// encryptedTreeEnc := encryptedShareTree[:len(encryptedShareTree) - 64]
-
-	// decryptedShareTreeSerialized := userlib.SymDec(treeEnc, encryptedTreeEnc)
-	// decryptedShareTreeSerialized = depad(decryptedShareTreeSerialized)
-	// var ShareTree FileTree
-	// ShareTreePtr := &ShareTree
-	// json.Unmarshal(decryptedShareTreeSerialized, ShareTreePtr)
-
-	// shareMap := make(map[string][]byte)
-	// shareMap[userdata.Username] = cloudUUIDSeed
-	// 	//Creating and uploading tree struct
-	// ShareTree.SharedWith = shareMap
-	// keyHolderForSharee := make(map[string][]byte)
-	// keyHolderForSharee["HMAC"] = cloudHMAC
-	// keyHolderForSharee["AES-CFB"] = cloudEnc
-
-	// mapForShareeKeys := make(map[string]map[string][]byte)
-	// mapForShareeKeys[userdata.Username] = keyHolderForSharee
-
-	// 	//encrypting and uploading filetree
-	// serializedTree, _ := json.Marshal(ShareTree)
-	// encryptedSerializedTree := userlib.SymEnc(treeEnc, userlib.RandomBytes(16), pad(serializedTree))
-	// HMACencryptedSerializedTree := userlib.SymEnc(treeHMAC, userlib.RandomBytes(16), pad(encryptedSerializedTree))
-	// userlib.DatastoreSet(treeUUID, append(encryptedSerializedTree,HMACencryptedSerializedTree...))
-
-	//take care of 126 bytes limit
-
-	userdata.updateUser()
+	//userdata.updateUser()
 	return nil
 }
 
 // RevokeFile is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/revokefile.html
 func (userdata *User) RevokeFile(filename string, targetUsername string) (err error) {
-	userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
+	//userdata, _ = GetUser(userdata.Username, userdata.rawpassword)
 	userdata.updateKeys(filename)
 	_, fileInMySpace := userdata.FileNamesToUUID[filename]
 	if !fileInMySpace {
@@ -996,7 +961,7 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 		}
 	}
 
-	userdata.updateUser()
+	//userdata.updateUser()
 	return
 }
 
