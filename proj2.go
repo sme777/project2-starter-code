@@ -108,6 +108,9 @@ type User struct {
 	PrivateSign userlib.DSSignKey
 	PublicSign  userlib.DSVerifyKey
 
+	//storing pw
+	Rawpassword string
+
 	//FileNumAppends       map[string]int
 	//SignitureKeys		 map[string]userlib.DSSignKey
 	// your username + filename + x, then hash
@@ -172,6 +175,21 @@ func depad(paddedmsg []byte) []byte {
 
 //This pulls and returns the file struct for a file from Datastore, given a filename
 //Errors if no such file exists in filespace
+func (userdata *User) updateUser() error {
+	//Serializing our user struct
+	serial, _ := json.Marshal(userdata)
+
+	//Encrypting userdata
+	encryptedUserData := userlib.SymEnc(userdata.FileEncKey, userlib.RandomBytes(16), pad(serial))
+
+	//HMAC-ing encrypted userdata
+	HMACofEncryptedUserData, _ := userlib.HMACEval(userdata.HMACKey, encryptedUserData)
+
+	//Storing in DataStore
+	userlib.DatastoreSet(userdata.DataStoreUUID, append(encryptedUserData, HMACofEncryptedUserData...))
+	return nil
+}
+
 func (userdata *User) PullFile(filename string) (contents []byte, numApp int, err error) {
 	userdata.updateKeys(filename)
 	storageKey, filenameExists := userdata.FileNamesToUUID[filename]
@@ -470,6 +488,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.PrivateSign = privSign
 	userdata.PublicSign = pubSign
 
+	//setting password
+	userdata.Rawpassword = password
+
 	//Storing public sign key key in Keystore
 	signname := string(userlib.Hash([]byte("signature"))) + string(userlib.Hash([]byte(username)))
 	userlib.KeystoreSet(signname, userdata.PublicSign)
@@ -564,6 +585,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	//NEED to store # of append files (links)
 	//NEED to overwrite the file
 	//Generating File struct to store the contents of the file
+	userdata, _ = GetUser(userdata.Username, userdata.Rawpassword)
 	var FileData File
 	FileData.NumAppends = 0
 	FileData.Contents = data
@@ -620,6 +642,7 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 		userdata.makeCloud(filename, userdata.Username, userdata.Username)
 		//userdata.SharingDataAccess[filename][userdata.Username] = *UUIDofCloud
 	}
+	userdata.updateUser()
 
 	return nil
 }
@@ -671,7 +694,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 
 	//uploading appendage to datastore
 	userlib.DatastoreSet(UUIDToStoreAppend, append(encrypted_appendage, hmac_appendage...))
-
+	userdata.updateUser()
 	return
 }
 
@@ -739,7 +762,7 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 		json.Unmarshal(decryptedSerializedAppendageData, filedataptrTestAppendage)
 		finalFile.Contents = append(finalFile.Contents, filedataTestAppendage.Contents...)
 	}
-
+	userdata.updateUser()
 	return finalFile.Contents, nil
 }
 
@@ -758,7 +781,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	// instanciate a new file cloud and access token
 	_, UUIDofAccessToken, _ := userdata.makeCloud(filename, userdata.Username, recipient)
 	//userdata.SharingDataAccess[filename][recipient] = *UUIDofCloud
-
+	userdata.updateUser()
 	return *UUIDofAccessToken, nil
 }
 
@@ -889,6 +912,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	// userlib.DatastoreSet(treeUUID, append(encryptedSerializedTree,HMACencryptedSerializedTree...))
 
 	//take care of 126 bytes limit
+	userdata.updateUser()
 	return nil
 }
 
@@ -959,6 +983,7 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 			}
 		}
 	}
+	userdata.updateUser()
 	return
 }
 
