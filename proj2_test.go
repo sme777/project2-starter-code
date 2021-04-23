@@ -810,26 +810,26 @@ func TestAdv1(t *testing.T) {
 
 }
 
-// func TestAdv2(t *testing.T) {
-// 	clear()
-// 	user1, _ := InitUser("mxo", "klor")
-// 	user2, _ := InitUser("arikus", "pulikus")
+func TestAdv2(t *testing.T) {
+	clear()
+	user1, _ := InitUser("mxo", "klor")
+	user2, _ := InitUser("arikus", "pulikus")
 
-// 	v := []byte("goodies")
-// 	user1.StoreFile("file1", v)
+	v := []byte("goodies")
+	user1.StoreFile("file1", v)
 
-// 	datastoreShuffle()
-// 	token, err := user1.ShareFile("file1", "arikus")
-// 	if err == nil {
-// 		t.Error("Should have caught the corrupt file")
-// 		return
-// 	}
-// 	err2 := user2.ReceiveFile("file2", "mxo", token)
-// 	if err2 == nil {
-// 		t.Error("Should have caught the corrupt file")
-// 		return
-// 	}
-// }
+	datastoreShuffle()
+	token, err := user1.ShareFile("file1", "arikus")
+	if err == nil {
+		t.Error("Should have caught the corrupt file")
+		return
+	}
+	err2 := user2.ReceiveFile("file2", "mxo", token)
+	if err2 == nil {
+		t.Error("Should have caught the corrupt file")
+		return
+	}
+}
 
 func TestAdv3(t *testing.T) {
 	clear()
