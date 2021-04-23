@@ -408,6 +408,54 @@ func TestAppend3(t *testing.T) {
 
 }
 
+func TestAppend4(t *testing.T) {
+
+	user1, _ := InitUser("mxo", "klor")
+
+	user2, _ := InitUser("sme", "qarakusi")
+
+	data := []byte("Here we go again, klris")
+
+	_ = user1.StoreFile("file1", data)
+
+	v, err := user1.LoadFile("file1")
+	if err != nil {
+		t.Error("Should be able to load the data")
+		return
+	}
+
+	token, err2 := user1.ShareFile("file1", "sme")
+	if err2 != nil {
+		t.Error("Should be able to share file")
+		return
+	}
+
+	err3 := user2.ReceiveFile("file2", "mxo", token)
+	if err3 != nil {
+		t.Error("Could not recieve file with a valid access token")
+		return
+	}
+	new_data := []byte("Qunem turqi berany")
+	user1.AppendFile("file1", new_data)
+
+	user2.AppendFile("file2", new_data)
+
+	v2 := append(v, new_data...)
+	v2 = append(v2, new_data...)
+
+	load1, err4 := user1.LoadFile("file1")
+	load2, err5 := user2.LoadFile("file2")
+
+	if err4 != nil || err5 != nil {
+		t.Error("An error occured while trying to load file")
+		return
+	}
+	if !reflect.DeepEqual(load1, v2) || !reflect.DeepEqual(load2, v2) {
+		t.Error("The shared data is no longer the same")
+		return
+	}
+}
+
 func TestLoad0(t *testing.T) {
 	clear()
 	t.Log("Testing loading user owned files")
@@ -449,6 +497,36 @@ func TestRecieve1(t *testing.T) {
 	err := user1.ReceiveFile("my sexy pics", "elizabeth", token)
 	if err == nil {
 		t.Error("Should not recieve revoked files!")
+	}
+}
+
+func TestReceive2(t *testing.T) {
+	clear()
+	// Create Alice and Bob
+	user1, _ := InitUser("mxo", "klor")
+	user2, _ := InitUser("sme", "karol")
+
+	file1 := "krilo"
+	data := []byte("goxakan jan")
+	user1.StoreFile(file1, data)
+
+	load, _ := user1.LoadFile(file1)
+
+	if !reflect.DeepEqual(data, load) {
+		t.Error("Different file")
+	}
+
+	token, _ := user1.ShareFile(file1, "sme")
+
+	file_rec := "bob's brilliant file"
+	user2.ReceiveFile(file_rec, "mxo", token)
+	newoad, err := user2.LoadFile(file_rec)
+	if err != nil {
+		t.Error("Could not receive the shared file")
+		return
+	}
+	if !reflect.DeepEqual(data, newoad) {
+		t.Error("Incorrect files")
 	}
 }
 
