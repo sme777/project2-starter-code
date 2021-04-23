@@ -109,7 +109,9 @@ type User struct {
 	PublicSign  userlib.DSVerifyKey
 
 	//storing pw
-	Rawpassword string
+	//Rawpassword string
+	//first time
+	//FirstTime bool
 
 	//FileNumAppends       map[string]int
 	//SignitureKeys		 map[string]userlib.DSSignKey
@@ -177,6 +179,11 @@ func depad(paddedmsg []byte) []byte {
 //Errors if no such file exists in filespace
 func (userdata *User) updateUser() error {
 	//Serializing our user struct
+
+	if userdata == nil {
+		return errors.New("user cannot be nil")
+	}
+
 	serial, _ := json.Marshal(userdata)
 
 	//Encrypting userdata
@@ -335,7 +342,11 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 		filesCloud.UUIDofFileTree = treeUUID
 
 		//getting tree I'm supposed to update
+		//var ok_mxo bool
 		encryptedShareTree, _ := userlib.DatastoreGet(treeUUID)
+		// if ok_mxo {
+		// 	return uuid.New(), uuid.New(), errors.New("invalid input")
+		// }
 		//encryptedTreeHMAC := encryptedShareTree[len(encryptedShareTree) - 64:]
 		if len(encryptedShareTree) <= 64 {
 			return nil, nil, errors.New("something wrong with length")
@@ -452,6 +463,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//TODO: This is a toy implementation.
 	userdata.Username = username
+	//userdata.FirstTime = true
 	//End of toy implementation
 
 	//This will be where we store the encrypted user struct in Datastore
@@ -489,7 +501,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.PublicSign = pubSign
 
 	//setting password
-	userdata.Rawpassword = password
+	//userdata.Rawpassword = password
 
 	//Storing public sign key key in Keystore
 	signname := string(userlib.Hash([]byte("signature"))) + string(userlib.Hash([]byte(username)))
@@ -586,6 +598,10 @@ func (userdata *User) StoreFile(filename string, data []byte) (err error) {
 	//NEED to overwrite the file
 	//Generating File struct to store the contents of the file
 	//userdata, _ = GetUser(userdata.Username, userdata.Rawpassword)
+	// userdata, err0 := GetUser(userdata.Username, userdata.Rawpassword)
+	// if err0 != nil {
+	// 	return errors.New("unknown error")
+	// }
 	var FileData File
 	FileData.NumAppends = 0
 	FileData.Contents = data
@@ -653,6 +669,10 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//TODO: Write file verify helper function
 	//TODO: DONT NEED TO GENERATE ORIGINAL UUID, CAN JUST PULL FROM FILENAME -> UUID MAP IN USER STRUCT
 	//userdata, _ = GetUser(userdata.Username, userdata.Rawpassword)
+	// userdata, err0 := GetUser(userdata.Username, userdata.Rawpassword)
+	// if err0 != nil {
+	// 	return errors.New("unknown error")
+	// }
 	_, supposedExist := userdata.FileNamesToUUID[filename]
 	if !supposedExist {
 		return errors.New("file doesn't exist in your namespace, dummy")
@@ -674,7 +694,11 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	storageKeyOriginal := userdata.FileNamesToUUID[filename]
 
 	var originalFileChanged File
-	originalFileChanged.Contents, originalFileChanged.NumAppends, _ = userdata.PullFile(filename)
+	var ok_mxo error
+	originalFileChanged.Contents, originalFileChanged.NumAppends, ok_mxo = userdata.PullFile(filename)
+	if ok_mxo != nil {
+		return errors.New("Invalid File")
+	}
 	originalFileChanged.NumAppends += 1
 
 	//Re-encrypting and uploading the original file struct
@@ -715,7 +739,16 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 	//End of toy implementation
 
 	//defining finalfile
+	// userdata, err0 := GetUser(userdata.Username, userdata.Rawpassword)
+	// if err0 != nil {
+	// 	return nil, errors.New("unknown error")
+	// }
+	// if !userdata.FirstTime {
 	//userdata, _ = GetUser(userdata.Username, userdata.Rawpassword)
+	// } else {
+	// 	userdata.FirstTime = false
+	// }
+
 	var finalFile File
 
 	//Pulling original file'd UUID
@@ -732,7 +765,11 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 		return nil, errors.New("file isn't there, revoked or deleted")
 	}
 	var originalFile File
-	originalFile.Contents, originalFile.NumAppends, _ = userdata.PullFile(filename)
+	var ok_mxo error
+	originalFile.Contents, originalFile.NumAppends, ok_mxo = userdata.PullFile(filename)
+	if ok_mxo != nil {
+		return nil, errors.New("invalid file")
+	}
 	finalFile.NumAppends = originalFile.NumAppends
 
 	finalFile.Contents = append(finalFile.Contents, originalFile.Contents...)
@@ -774,6 +811,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	accessToken uuid.UUID, err error) {
 
 	//userdata, _ = GetUser(userdata.Username, userdata.Rawpassword)
+	// userdata, err0 := GetUser(userdata.Username, userdata.Rawpassword)
+	// if err0 != nil {
+	// 	return uuid.New(), errors.New("unknown error")
+	// }
 	_, ok1 := userlib.KeystoreGet(recipient)
 	if !ok1 {
 		return uuid.New(), errors.New("User doesn't exist")
@@ -783,7 +824,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 		return uuid.New(), errors.New("File does not exist in namespace")
 	}
 	// instanciate a new file cloud and access token
-	_, UUIDofAccessToken, _ := userdata.makeCloud(filename, userdata.Username, recipient)
+	_, UUIDofAccessToken, err := userdata.makeCloud(filename, userdata.Username, recipient)
+	if err != nil {
+		return uuid.New(), errors.New("invalid input")
+	}
 	//userdata.SharingDataAccess[filename][recipient] = *UUIDofCloud
 	//userdata.updateUser()
 	return *UUIDofAccessToken, nil
@@ -795,6 +839,10 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	accessToken uuid.UUID) (err error) {
 	//verifying that the file does not exist
 	//userdata, _ = GetUser(userdata.Username, userdata.Rawpassword)
+	// userdata, err0 := GetUser(userdata.Username, userdata.Rawpassword)
+	// if err0 != nil {
+	// 	return errors.New("unknown error")
+	// }
 	_, doIHaveThis := userdata.FileNamesToUUID[filename]
 
 	if doIHaveThis {
@@ -924,7 +972,10 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 // RevokeFile is documented at:
 // https://cs161.org/assets/projects/2/docs/client_api/revokefile.html
 func (userdata *User) RevokeFile(filename string, targetUsername string) (err error) {
-	//userdata, _ = GetUser(userdata.Username, userdata.Rawpassword)
+	//userdata, err0 := GetUser(userdata.Username, userdata.Rawpassword)
+	// if err0 != nil {
+	// 	return errors.New("Unknown Error")
+	// }
 	userdata.updateKeys(filename)
 	_, fileInMySpace := userdata.FileNamesToUUID[filename]
 	if !fileInMySpace {
@@ -951,8 +1002,10 @@ func (userdata *User) RevokeFile(filename string, targetUsername string) (err er
 	// var encrypted_data = userlib.SymEnc(userdata.FindKeys[filename]["AES-CFB"], userlib.RandomBytes(16), pad(serializedOriginal))
 	// var hmac_data, _ = userlib.HMACEval(userdata.FindKeys[filename]["HMAC"], encrypted_data)
 	// userlib.DatastoreSet(newUUID, append(encrypted_data, hmac_data...))
-	userdata.FileReencryptor(filename, newUUID, newEncKey, newHMACKey)
-
+	ok_mxo := userdata.FileReencryptor(filename, newUUID, newEncKey, newHMACKey)
+	if ok_mxo != nil {
+		return errors.New("corrupt file error")
+	}
 	//Updating my own stuff
 	userdata.FindKeys[filename]["AES-CFB"] = newEncKey
 	userdata.FindKeys[filename]["HMAC"] = newHMACKey
@@ -997,7 +1050,11 @@ func (userdata *User) FileReencryptor(filename string, newUUID uuid.UUID, newEnc
 	//new UUID to store file in
 	//originalFileStruct
 	var pulledOriginal File
-	pulledOriginal.Contents, pulledOriginal.NumAppends, _ = userdata.PullFile(filename)
+	var ok_mxo error
+	pulledOriginal.Contents, pulledOriginal.NumAppends, ok_mxo = userdata.PullFile(filename)
+	if ok_mxo != nil {
+		return errors.New("corrupt file error")
+	}
 	serializedOriginal, _ := json.Marshal(pulledOriginal)
 
 	var encrypted_data = userlib.SymEnc(newEnc, userlib.RandomBytes(16), pad(serializedOriginal))

@@ -24,6 +24,26 @@ func clear() {
 	userlib.KeystoreClear()
 }
 
+func TestInit0(t *testing.T) {
+	clear()
+	u1, err1 := InitUser("alice", "fubar")
+	if err1 != nil {
+		t.Error("Failed to initialize user", err1)
+		return
+	}
+	u2, err2 := GetUser("alice", "fubar")
+	if err2 != nil {
+		t.Error("Failed to initialize user", err2)
+		return
+	}
+
+	if !reflect.DeepEqual(u1, u2) {
+		t.Error("Should say that these are the same user")
+		return
+	}
+
+}
+
 func TestInit(t *testing.T) {
 	clear()
 	t.Log("Initialization test")
@@ -65,6 +85,20 @@ func TestInit2(t *testing.T) {
 	// t.Log() only produces output if you run with "go test -v"
 	t.Log("Got user", u)
 	t.Log("Didn't get user", u2)
+}
+
+func TestInit3(t *testing.T) {
+	clear()
+	user, _ := InitUser("mxo", "klor")
+	user1, err := GetUser("mxo", "klor")
+	if err != nil {
+		t.Error("Failed to get user")
+		return
+	}
+	if !reflect.DeepEqual(user1, user) {
+		t.Error("Should say that these are the same user")
+		return
+	}
 }
 
 func TestGet(t *testing.T) {
@@ -134,6 +168,17 @@ func TestGet3(t *testing.T) {
 	}
 }
 
+func TestGet4(t *testing.T) {
+	clear()
+	_, _ = InitUser("mxo", "klor")
+
+	_, err := GetUser("mxo", "qarakusi")
+	if err == nil {
+		t.Error("Invalidate credentials")
+		return
+	}
+}
+
 func TestStorage(t *testing.T) {
 	clear()
 	u, err := InitUser("alice", "fubar")
@@ -183,13 +228,9 @@ func TestStorage2(t *testing.T) {
 
 func TestInvalidFile(t *testing.T) {
 	clear()
-	u, err := InitUser("alice", "fubar")
-	if err != nil {
-		t.Error("Failed to initialize user", err)
-		return
-	}
+	user, _ := InitUser("alice", "fubar")
 
-	_, err2 := u.LoadFile("this file does not exist")
+	_, err2 := user.LoadFile("this file does not exist")
 	if err2 == nil {
 		t.Error("Downloaded a ninexistent file", err2)
 		return
@@ -292,7 +333,6 @@ func TestShare2(t *testing.T) {
 }
 
 func TestShare3(t *testing.T) {
-	//errors
 	clear()
 	t.Log("Sharing a file with invalid user")
 	user1, _ := InitUser("heros andranik", "sasun")
@@ -395,7 +435,6 @@ func TestAppend3(t *testing.T) {
 	user2.ReceiveFile("file1", "sasunci mkrtich", access)
 	err2 := user2.AppendFile("file1", []byte("more cool stuff"))
 
-	//err := user1.AppendFile("ccashat", []byte("inchqan mec enqanlav"))
 	if err2 != nil {
 		t.Error("Appended file should work for user with access token")
 		return
@@ -419,11 +458,9 @@ func TestAppend3(t *testing.T) {
 func TestAppend4(t *testing.T) {
 
 	user1, _ := InitUser("mxo", "klor")
-
 	user2, _ := InitUser("sme", "qarakusi")
 
 	data := []byte("Here we go again, klris")
-
 	_ = user1.StoreFile("file1", data)
 
 	v, err := user1.LoadFile("file1")
@@ -460,6 +497,33 @@ func TestAppend4(t *testing.T) {
 	}
 	if !reflect.DeepEqual(load1, v2) || !reflect.DeepEqual(load2, v2) {
 		t.Error("The shared data is no longer the same")
+		return
+	}
+}
+
+func TestAppend5(t *testing.T) {
+	clear()
+	user1, _ := InitUser("mxo", "klor")
+
+	v := []byte("hello world")
+	user1.StoreFile("file1", v)
+
+	for i := 0; i < 200; i++ {
+		err := user1.AppendFile("file1", []byte(" hi"))
+		if err != nil {
+			t.Error("Should be able to append to a file")
+			return
+		}
+	}
+
+	v2, err2 := user1.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Should be able to download the file")
+		return
+	}
+
+	if reflect.DeepEqual(v, v2) {
+		t.Error("Should not be equal to original file")
 		return
 	}
 }
@@ -509,8 +573,6 @@ func TestRecieve1(t *testing.T) {
 }
 
 func TestReceive2(t *testing.T) {
-	clear()
-	// Create Alice and Bob
 	user1, _ := InitUser("mxo", "klor")
 	user2, _ := InitUser("sme", "karol")
 
@@ -535,6 +597,33 @@ func TestReceive2(t *testing.T) {
 	}
 	if !reflect.DeepEqual(data, newoad) {
 		t.Error("Incorrect files")
+	}
+}
+
+func TestReceive3(t *testing.T) {
+	clear()
+	user1, _ := InitUser("johnny", "you know who")
+
+	user2, _ := InitUser("margaret", "cool")
+
+	v := []byte("Super secret info")
+	user1.StoreFile("file1", v)
+
+	v2 := []byte("CIA classified info")
+	user2.StoreFile("file2", v2)
+
+	token, _ := user1.ShareFile("file1", "margaret")
+
+	err := user2.ReceiveFile("new file", "mallory", token)
+	if err == nil {
+		t.Error("Should not recieve file from wrong User")
+		return
+	}
+
+	err2 := user2.ReceiveFile("new file", "margaret", uuid.New())
+	if err2 == nil {
+		t.Error("Should not recieve invalid token")
+		return
 	}
 }
 
@@ -699,13 +788,112 @@ func TestRevoke4(t *testing.T) {
 	}
 }
 
-func TestMix0(t *testing.T) {
+func datastoreShuffle() {
+	datastoreMap := userlib.DatastoreGetMap()
+	randomNum := userlib.RandomBytes(16)
+	for i := range datastoreMap {
+		userlib.DatastoreSet(i, randomNum)
+	}
+}
+
+func TestAdv1(t *testing.T) {
+	clear()
+	mxo, _ := InitUser("mxo", "plorik")
+	sme, _ := InitUser("sme", "gazanik")
+
+	if reflect.DeepEqual(mxo, sme) {
+		t.Error("Init returned the same values for mxo and sme")
+		return
+	}
+	datastoreShuffle()
+	_, _ = GetUser("mxo", "sme")
+
+}
+
+// func TestAdv2(t *testing.T) {
+// 	clear()
+// 	user1, _ := InitUser("mxo", "klor")
+// 	user2, _ := InitUser("arikus", "pulikus")
+
+// 	v := []byte("goodies")
+// 	user1.StoreFile("file1", v)
+
+// 	datastoreShuffle()
+// 	token, err := user1.ShareFile("file1", "arikus")
+// 	if err == nil {
+// 		t.Error("Should have caught the corrupt file")
+// 		return
+// 	}
+// 	err2 := user2.ReceiveFile("file2", "mxo", token)
+// 	if err2 == nil {
+// 		t.Error("Should have caught the corrupt file")
+// 		return
+// 	}
+// }
+
+func TestAdv3(t *testing.T) {
+	clear()
+	user1, _ := InitUser("sme", "goxakan")
+	v := []byte("steve wonders")
+	user1.StoreFile("file1", v)
+	datastoreShuffle()
+	v2, err2 := user1.LoadFile("file1")
+	if err2 == nil {
+		t.Error("Should have caught the corrupt file")
+		return
+	}
+	if reflect.DeepEqual(v, v2) {
+		t.Error("Downloaded file should be the same")
+		return
+	}
+}
+
+func TestAdv4(t *testing.T) {
+	clear()
+	datastoreShuffle()
+	user1, _ := InitUser("mxo", "plorik")
+	user2, _ := GetUser("mxo", "plorik")
+
+	if !reflect.DeepEqual(user1, user2) {
+		t.Error("Should output the correct user")
+	}
+	v := []byte("What a wonderful world")
+	user1.StoreFile("file1", v)
+	datastoreShuffle()
+	err := user1.AppendFile("file1", v)
+	if err == nil {
+		t.Error("Should output failure")
+		return
+	}
+
+}
+
+func TestAdv5(t *testing.T) {
+	clear()
+	user1, _ := InitUser("mxo", "ccan")
+	user2, _ := InitUser("sme", "kataxac")
+
+	v := []byte("goodies")
+	user1.StoreFile("file1", v)
+
+	token, err := user1.ShareFile("file1", "sme")
+	if err != nil {
+		t.Error("Should have caught the corrupt file")
+		return
+	}
+	datastoreShuffle()
+	err = user2.ReceiveFile("file2", "mxo", token)
+	if err == nil {
+		t.Error("Should have caught the corrupt file")
+		return
+	}
+}
+
+func TestMix1(t *testing.T) {
 	user1, _ := InitUser("michael", "klor")
 	user2, _ := InitUser("samson", "qarakusi")
 
 	v1 := []byte("goodies")
-	//v2 := []byte("not goodies")
-
 	user1.StoreFile("file1", v1)
 	user2.StoreFile("file1", v1)
 
@@ -716,7 +904,6 @@ func TestMix0(t *testing.T) {
 	if err != nil {
 		t.Error("Something went wrong")
 	}
-	// make sure v1 is not changed for user2
 	if !reflect.DeepEqual(file2, v1) {
 		t.Error("File has been illegaly changed")
 	}
@@ -729,78 +916,13 @@ func TestMix0(t *testing.T) {
 		t.Error("Something went wrong")
 	}
 
-	//make sure new file is v1+v2 and does not include v3
 	if !reflect.DeepEqual(file1, append(v1, v2...)) {
 		t.Error("File has been illegaly changed")
 	}
 
 }
 
-// func TestMix1(t *testing.T) {
-// 	clear()
-
-// 	_, _ = InitUser("mxo", "klor")
-
-// 	mxo1, err := GetUser("mxo", "klor")
-// 	if err != nil {
-// 		t.Error("Should get User Mxo back", err)
-// 		return
-// 	}
-// 	mxo2, err1 := GetUser("mxo", "klor")
-// 	if err1 != nil {
-// 		t.Error("Should get User Mxo back", err)
-// 		return
-// 	}
-
-// 	//file1 := "gulyaem v golivude"
-// 	v := []byte("wa wa wi wa")
-
-// 	mxo1.StoreFile("file1", v)
-// 	mxo_load, _ := mxo2.LoadFile("file1")
-
-// 	if !reflect.DeepEqual(v, mxo_load) {
-// 		t.Error("Should store different instances")
-// 		return
-// 	}
-
-// 	v2 := []byte("going to Las Vegas")
-// 	err2 := mxo1.AppendFile("file1", v2)
-// 	if err2 != nil {
-// 		t.Error("Failed to append file", err)
-// 		return
-// 	}
-
-// 	mxo_load, err = mxo2.LoadFile("file1")
-// 	if !reflect.DeepEqual(append(v, v2...), mxo_load) {
-// 		t.Error("Should store different instances")
-// 		return
-// 	}
-
-// 	if err != nil {
-// 		t.Error("Should store different instances")
-// 		return
-// 	}
-
-// 	user3, _ := InitUser("arikus", "apelsin")
-
-// 	user3.StoreFile("file1", []byte("time to go to Birmingham"))
-// 	magic_string, _ := user3.ShareFile("file1", "mxo")
-
-// 	_ = mxo1.ReceiveFile("alice_file", "chris", magic_string)
-
-// 	mxo_load2, err3 := mxo2.LoadFile("file1")
-// 	if !reflect.DeepEqual(mxo_load2, []byte("test content")) {
-// 		t.Error("Should be able to load and store with different instances")
-// 		return
-// 	}
-// 	if err3 != nil {
-// 		t.Error("Should be able to load and store with different instances")
-// 		return
-// 	}
-
-// }
-
-func TestMix3(t *testing.T) {
+func TestMix2(t *testing.T) {
 	user1, _ := InitUser("mxo", "klor")
 
 	user2, _ := InitUser("sme", "gazan")
