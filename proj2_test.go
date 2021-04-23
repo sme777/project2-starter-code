@@ -126,6 +126,14 @@ func TestGet2(t *testing.T) {
 	}
 }
 
+func TestGet3(t *testing.T) {
+	_, err := GetUser("arikus", "marikus")
+	if err == nil {
+		t.Error("Should not be able to get a non existing user")
+		return
+	}
+}
+
 func TestStorage(t *testing.T) {
 	clear()
 	u, err := InitUser("alice", "fubar")
@@ -791,3 +799,40 @@ func TestMix0(t *testing.T) {
 // 	}
 
 // }
+
+func TestMix3(t *testing.T) {
+	user1, _ := InitUser("mxo", "klor")
+
+	user2, _ := InitUser("sme", "gazan")
+
+	file1 := "krilo"
+	data := []byte("goxakan jan")
+	user1.StoreFile(file1, data)
+
+	token, _ := user1.ShareFile("file1", "sme")
+
+	_ = user2.ReceiveFile("file2", "mxo", token)
+
+	datastoreMap := userlib.DatastoreGetMap()
+
+	dmKeys := make(map[string][]byte)
+	for uuid, _ := range datastoreMap {
+		dmKeys[uuid.String()] = datastoreMap[uuid]
+	}
+
+	user1.RevokeFile("file1", "sme")
+
+	newDatastoreMap := userlib.DatastoreGetMap()
+
+	for uuid, file := range newDatastoreMap {
+		if !reflect.DeepEqual(file, dmKeys[uuid.String()]) {
+			userlib.DatastoreSet(uuid, dmKeys[uuid.String()])
+		}
+	}
+
+	_, err := user2.LoadFile("file2")
+	if err == nil {
+		t.Error("Did not notice file tampering")
+		return
+	}
+}
