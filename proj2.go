@@ -105,8 +105,8 @@ type User struct {
 	TreesIUpdateKeys map[string]map[string][]byte
 
 	//storing signature keys
-	privateSign userlib.DSSignKey
-	publicSign  userlib.DSVerifyKey
+	PrivateSign userlib.DSSignKey
+	PublicSign  userlib.DSVerifyKey
 
 	//FileNumAppends       map[string]int
 	//SignitureKeys		 map[string]userlib.DSSignKey
@@ -248,7 +248,7 @@ func (userdata *User) makeCloud(filename string, sender string, recipient string
 	encryptedHMACdAccessToken := append(encryptedToken, HMACofAccessToken...)
 
 	//signing
-	signature, _ := userlib.DSSign(userdata.privateSign, encryptedHMACdAccessToken)
+	signature, _ := userlib.DSSign(userdata.PrivateSign, encryptedHMACdAccessToken)
 	//appending signature to HMACed encryption of access token
 	signedEnctyptedHMACAccessToken := append(encryptedHMACdAccessToken, signature...)
 	//generating access token UUID
@@ -467,12 +467,12 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	//generating signature
 	//Storing public Sign key in Keystore
 	privSign, pubSign, _ := userlib.DSKeyGen()
-	userdata.privateSign = privSign
-	userdata.publicSign = pubSign
+	userdata.PrivateSign = privSign
+	userdata.PublicSign = pubSign
 
 	//Storing public sign key key in Keystore
 	signname := string(userlib.Hash([]byte("signature"))) + string(userlib.Hash([]byte(username)))
-	userlib.KeystoreSet(signname, userdata.publicSign)
+	userlib.KeystoreSet(signname, userdata.PublicSign)
 
 	//Serializing our user struct
 	serial, _ := json.Marshal(userdata)
@@ -747,9 +747,12 @@ func (userdata *User) LoadFile(filename string) (dataBytes []byte, err error) {
 // https://cs161.org/assets/projects/2/docs/client_api/sharefile.html
 func (userdata *User) ShareFile(filename string, recipient string) (
 	accessToken uuid.UUID, err error) {
-	_, ok1 := userdata.FilesIOwn[filename]
+	_, ok1 := userlib.KeystoreGet(recipient)
+	if !ok1 {
+		return uuid.New(), errors.New("User doesn't exist")
+	}
 	_, ok2 := userdata.FileNamesToUUID[filename]
-	if !ok1 && !ok2 {
+	if !ok2 {
 		return uuid.New(), errors.New("File does not exist in namespace")
 	}
 	// instanciate a new file cloud and access token

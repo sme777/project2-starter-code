@@ -283,20 +283,20 @@ func TestShare2(t *testing.T) {
 	}
 }
 
-// func TestShare3(t *testing.T) {
-// 	//errors
-// 	clear()
-// 	t.Log("Sharing a file with invalid user")
-// 	user1, _ := InitUser("heros andranik", "sasun")
-// 	v := []byte("Cereteli Kara")
-// 	user1.StoreFile("file1", v)
-// 	_, err := user1.ShareFile("file1", "hachnci gvenik")
+func TestShare3(t *testing.T) {
+	//errors
+	clear()
+	t.Log("Sharing a file with invalid user")
+	user1, _ := InitUser("heros andranik", "sasun")
+	v := []byte("Cereteli Kara")
+	user1.StoreFile("file1", v)
+	_, err := user1.ShareFile("file1", "hachnci gvenik")
 
-// 	if err == nil {
-// 		t.Error("Trying to share a file with unknown user", err)
-// 		return
-// 	}
-// }
+	if err == nil {
+		t.Error("Trying to share a file with unknown user", err)
+		return
+	}
+}
 
 func TestAppend0(t *testing.T) {
 	clear()
@@ -650,98 +650,68 @@ func TestMix0(t *testing.T) {
 
 }
 
-func TestMix1(t *testing.T) {
-	clear()
+// func TestMix1(t *testing.T) {
+// 	clear()
 
-	_, _ = InitUser("mxo", "klor")
+// 	_, _ = InitUser("mxo", "klor")
 
-	mxo1, err := GetUser("mxo", "klor")
-	if err != nil {
-		t.Error("Should get User Mxo back", err)
-		return
-	}
-	mxo2, err1 := GetUser("mxo", "klor")
-	if err1 != nil {
-		t.Error("Should get User Mxo back", err)
-		return
-	}
+// 	mxo1, err := GetUser("mxo", "klor")
+// 	if err != nil {
+// 		t.Error("Should get User Mxo back", err)
+// 		return
+// 	}
+// 	mxo2, err1 := GetUser("mxo", "klor")
+// 	if err1 != nil {
+// 		t.Error("Should get User Mxo back", err)
+// 		return
+// 	}
 
-	//file1 := "gulyaem v golivude"
-	v := []byte("wa wa wi wa")
+// 	//file1 := "gulyaem v golivude"
+// 	v := []byte("wa wa wi wa")
 
-	mxo1.StoreFile("file1", v)
-	mxo_load, _ := mxo2.LoadFile("file1")
+// 	mxo1.StoreFile("file1", v)
+// 	mxo_load, _ := mxo2.LoadFile("file1")
 
-	if !reflect.DeepEqual(v, mxo_load) {
-		t.Error("Should store different instances")
-		return
-	}
+// 	if !reflect.DeepEqual(v, mxo_load) {
+// 		t.Error("Should store different instances")
+// 		return
+// 	}
 
-	v2 := []byte("going to Las Vegas")
-	err2 := mxo1.AppendFile("file1", v2)
-	if err2 != nil {
-		t.Error("Failed to append file", err)
-		return
-	}
+// 	v2 := []byte("going to Las Vegas")
+// 	err2 := mxo1.AppendFile("file1", v2)
+// 	if err2 != nil {
+// 		t.Error("Failed to append file", err)
+// 		return
+// 	}
 
-	mxo_load, err = mxo2.LoadFile("file1")
-	if !reflect.DeepEqual(append(v, v2...), mxo_load) {
-		t.Error("Should store different instances")
-		return
-	}
+// 	mxo_load, err = mxo2.LoadFile("file1")
+// 	if !reflect.DeepEqual(append(v, v2...), mxo_load) {
+// 		t.Error("Should store different instances")
+// 		return
+// 	}
 
-	if err != nil {
-		t.Error("Should store different instances")
-		return
-	}
+// 	if err != nil {
+// 		t.Error("Should store different instances")
+// 		return
+// 	}
 
-	user3, _ := InitUser("arikus", "apelsin")
+// 	user3, _ := InitUser("arikus", "apelsin")
 
-	user3.StoreFile("file1", []byte("time to go to Birmingham"))
-	magic_string, _ := user3.ShareFile("file1", "mxo")
+// 	user3.StoreFile("file1", []byte("time to go to Birmingham"))
+// 	magic_string, _ := user3.ShareFile("file1", "mxo")
 
-	_ = mxo1.ReceiveFile("alice_file", "chris", magic_string)
+// 	_ = mxo1.ReceiveFile("alice_file", "chris", magic_string)
 
-	mxo_load2, err3 := mxo2.LoadFile("file1")
-	if !reflect.DeepEqual(mxo_load2, []byte("test content")) {
-		t.Error("Should be able to load and store with different instances")
-		return
-	}
-	if err3 != nil {
-		t.Error("Should be able to load and store with different instances")
-		return
-	}
+// 	mxo_load2, err3 := mxo2.LoadFile("file1")
+// 	if !reflect.DeepEqual(mxo_load2, []byte("test content")) {
+// 		t.Error("Should be able to load and store with different instances")
+// 		return
+// 	}
+// 	if err3 != nil {
+// 		t.Error("Should be able to load and store with different instances")
+// 		return
+// 	}
 
-}
+// }
 
-func TestSameFilename(t *testing.T) {
-	clear()
-	// Create Alice and Bob
-	u, _ := InitUser("alice", "fubar")
-	u2, _ := InitUser("bob", "fubar")
 
-	// Both create File f w/ same content
-	data := []byte("content")
-	u.StoreFile("f", data)
-	u2.StoreFile("f", data)
-
-	// Alice appends to File
-	newdata := []byte("new content")
-	_ = u.AppendFile("f", newdata)
-
-	// Ensure that Bob's file wasn't affected
-	dataload, err := u2.LoadFile("f")
-	if !reflect.DeepEqual(dataload, data) || err != nil {
-		t.Error("Couldn't handle same filename", err)
-	}
-
-	// Alice stores new file
-	newdata = []byte("brand new content")
-	u.StoreFile("f", newdata)
-
-	// Ensure that Bob's file wasn't affected
-	dataload, err = u2.LoadFile("f")
-	if !reflect.DeepEqual(dataload, data) || err != nil {
-		t.Error("Couldn't handle same filename", err)
-	}
-}
